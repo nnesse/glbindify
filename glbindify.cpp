@@ -90,9 +90,8 @@ struct command {
 		std::string decl;
 	};
 	std::vector<param> params;
-	void print_declare(std::ofstream &out, const std::string &api_name) {
-		std::string trunc_name = name.substr(api_name.size());
-		out << "\t\textern " << type_decl << " (*" << trunc_name << ")(";
+	void print_declare(std::ofstream &out, const char *command_prefix, std::string &indent_string) {
+		out << indent_string << "extern " << type_decl << " (*" << command_prefix << name << ")(";
 		if (params.size()) {
 			out << params[0].decl;
 			for(int i = 1; i < params.size(); i++) {
@@ -101,9 +100,8 @@ struct command {
 		}
 		out << ");" << std::endl;
 	}
-	void print_initialize(std::ofstream &out, const std::string &api_name) {
-		std::string trunc_name = name.substr(api_name.size());
-		out << "\t\t" << type_decl << " (*" << trunc_name << ")(";
+	void print_initialize(std::ofstream &out, const char *command_prefix, std::string &indent_string) {
+		out << indent_string << "" << type_decl << " (*" << command_prefix << name << ")(";
 		if (params.size()) {
 			out << params[0].decl;
 			for(int i = 1; i < params.size(); i++) {
@@ -113,16 +111,15 @@ struct command {
 		out << ") = NULL;" << std::endl;
 	}
 
-	void print_load(std::ofstream &out, const std::string &api_name) {
-		std::string trunc_name = name.substr(api_name.size());
-		out << "\t\t\t" << trunc_name << " = (" << type_decl << " (*)(";
+	void print_load(std::ofstream &out, const char *command_prefix, bool include_prefix, std::string &indent_string) {
+		out << indent_string << (include_prefix ? command_prefix : "") << name << " = (" << type_decl << " (*)(";
 		if (params.size()) {
 			out << params[0].decl;
 			for(int i = 1; i < params.size(); i++) {
 				out << ", " << params[i].decl;
 			}
 		}
-		out << ") ) LoadProcAddress(\"" << name << "\");" << std::endl;
+		out << ") ) LoadProcAddress(\"" << command_prefix << name << "\");" << std::endl;
 	}
 };
 typedef std::shared_ptr<command> command_ptr;
@@ -136,6 +133,11 @@ class api {
 
 	//Api description
 	std::string m_name;
+	const char *m_command_prefix;
+	const char *m_enumeration_prefix;
+
+	bool m_use_api_namespaces;
+
 	std::set<std::string> m_extensions;
 	float m_version;
 
@@ -154,16 +156,26 @@ class api {
 	void include_type(std::string &type);
 	void resolve_types();
 
-	void types_declare(std::ofstream &header);
-	void namespace_declare(std::ofstream &header);
-	void namespace_define(std::ofstream &header);
-
-	bool is_in_namespace(const std::string &str) {
-		return (m_name == "wgl" && str.substr(0, 3) == "wgl") ||
-			(m_name == "glx" && str.substr(0, 3) == "glX") ||
-			(m_name == "gl" && str.substr(0, 2) == "gl");
-	}
+	void types_declare(std::ofstream &header, std::string &indent_string);
+	void namespace_declare(std::ofstream &header, std::string &indent_string);
+	void namespace_define(std::ofstream &header, std::string &indent_string);
 public:
+	bool is_command_in_namespace(const char **name) {
+		if (strstr(*name, m_command_prefix)) {
+			*name = *name + strlen(m_command_prefix);
+			return true;
+		} else {
+			return false;
+		}
+	}
+	bool is_enum_in_namespace(const char **name) {
+		if (strstr(*name, m_enumeration_prefix)) {
+			*name = *name + strlen(m_enumeration_prefix);
+			return true;
+		} else {
+			return false;
+		}
+	}
 
 	const std::string &name() {
 		return m_name;
@@ -173,11 +185,22 @@ public:
 		return m_version;
 	}
 
-	api(std::string name, float version, std::set<std::string> &extensions) :
+	api(std::string name, float version, bool use_api_namespace, std::set<std::string> &extensions) :
 		m_name(name),
 		m_version(version),
-		m_extensions(extensions)
+		m_extensions(extensions),
+		m_use_api_namespaces(use_api_namespace)
 	{
+		if (m_name == "wgl") {
+			m_command_prefix = "wgl";
+			m_enumeration_prefix = "WGL_";
+		} else if (m_name == "glx") {
+			m_command_prefix = "glx";
+			m_enumeration_prefix = "GLX_";
+		} else if (m_name == "gl") {
+			m_command_prefix = "gl";
+			m_enumeration_prefix = "GL_";
+		}
 	}
 	void bindify(XMLDocument &doc, std::string &header_name, std::ofstream &header_stream, std::ofstream &cpp_stream);
 };
@@ -235,6 +258,9 @@ class command_visitor : public data_builder_visitor<command>
 	api &m_api;
 	virtual bool visit(const XMLText &text)
 	{
+		if (!m_data)
+			return false;
+
 		if (parent_tag_test(text, "param")) {
 			m_data->params.back().decl += text.Value();
 		} else if (parent_tag_stack_test(text, "name", "param")) {
@@ -245,7 +271,14 @@ class command_visitor : public data_builder_visitor<command>
 		} else if (parent_tag_test(text, "proto")) {
 			m_data->type_decl += text.Value();
 		} else if (parent_tag_stack_test(text, "name", "proto")) {
-			m_data->name = text.Value();
+			const char *command_name = text.Value();
+			if (m_api.is_command_in_namespace(&command_name)) {
+				m_data->name = command_name;
+				return true;
+			} else {
+				m_data.reset();
+				return false;
+			}
 		} else if (parent_tag_stack_test(text, "ptype", "proto")) {
 			m_data->type = text.Value();
 			m_data->type_decl += text.Value();
@@ -255,6 +288,9 @@ class command_visitor : public data_builder_visitor<command>
 
 	virtual bool visit_enter(const XMLElement &elem, const XMLAttribute *attrib)
 	{
+		if (!m_data)
+			return false;
+
 		if (tag_test(elem, "proto")) {
 			return true;
 		} else if (tag_stack_test(elem, "ptype", "proto")) {
@@ -295,16 +331,19 @@ class enumeration_visitor : public data_builder_visitor<enumeration>
 	virtual bool visit_enter(const XMLElement &elem, const XMLAttribute *attrib)
 	{
 		if (tag_test(elem, "enum")) {
-			if(elem.Attribute("api") && elem.Attribute("api") != m_api.m_name)
+			if (elem.Attribute("api") && elem.Attribute("api") != m_api.m_name)
 				return false;
 			unsigned int val;
 			int ret = sscanf(elem.Attribute("value"), "0x%x", &val);
 			if (!ret)
 				ret = sscanf(elem.Attribute("value"), "%d", &val);
-			const char *name_c = elem.Attribute("name");
+			const char *enumeration_name = elem.Attribute("name");
+
 			if (ret) {
-				m_data->enum_map[name_c] = val;
-				m_api.m_enum_map[name_c] = val;
+				if (m_api.is_enum_in_namespace(&enumeration_name)) {
+					m_data->enum_map[enumeration_name] = val;
+					m_api.m_enum_map[enumeration_name] = val;
+				}
 			}
 		}
 		return false;
@@ -328,14 +367,29 @@ class feature_visitor :  public XMLVisitor
 		} else if (tag_stack_test(elem, "require", "feature") || tag_stack_test(elem, "remove", "feature")) {
 			return (!elem.Attribute("profile")) || (elem.Attribute("profile") != "core");
 		} else if (tag_stack_test(elem, "enum", "require")) {
-			m_api.m_target_enums[elem.Attribute("name")] = m_api.m_enum_map[elem.Attribute("name")];
-			return true;
+			const char *enumeration_name = elem.Attribute("name");
+			if (m_api.is_enum_in_namespace(&enumeration_name)) {
+				m_api.m_target_enums[enumeration_name] = m_api.m_enum_map[enumeration_name];
+				return true;
+			} else {
+				return false;
+			}
 		} else if (tag_stack_test(elem, "enum", "remove")) {
-			m_api.m_target_enums.erase(elem.Attribute("name"));
-			return true;
+			const char *enumeration_name = elem.Attribute("name");
+			if (m_api.is_enum_in_namespace(&enumeration_name)) {
+				m_api.m_target_enums.erase(enumeration_name);
+				return true;
+			} else {
+				return false;
+			}
 		} else if (tag_stack_test(elem, "command", "require")) {
-			m_api.m_target_commands[elem.Attribute("name")] = m_api.m_commands[elem.Attribute("name")];
-			return true;
+			const char *command_name = elem.Attribute("name");
+			if (m_api.is_command_in_namespace(&command_name)) {
+				m_api.m_target_commands[command_name] = m_api.m_commands[command_name];
+				return true;
+			} else {
+				return false;
+			}
 		} else if (tag_stack_test(elem, "command", "remove")) {
 			m_api.m_target_commands.erase(elem.Attribute("name"));
 			return true;
@@ -370,10 +424,21 @@ class extension_visitor :  public XMLVisitor
 		} else if (tag_stack_test(elem, "require", "extension") || tag_stack_test(elem, "remove", "extension")) {
 			return !elem.Attribute("profile") || (elem.Attribute("profile") == "core");
 		} else if (tag_stack_test(elem, "enum", "require")) {
-			m_api.m_target_enums[elem.Attribute("name")] = m_api.m_enum_map[elem.Attribute("name")];
-			return true;
+			const char *enumeration_name = elem.Attribute("name");
+			if (m_api.is_enum_in_namespace(&enumeration_name)) {
+				m_api.m_target_enums[enumeration_name] = m_api.m_enum_map[elem.Attribute("name")];
+				return true;
+			} else {
+				return false;
+			}
 		} else if (tag_stack_test(elem, "command", "require")) {
-			m_api.m_target_extension_commands[m_name][elem.Attribute("name")] = m_api.m_commands[elem.Attribute("name")];
+			const char *command_name = elem.Attribute("name");
+			if (m_api.is_command_in_namespace(&command_name)) {
+				m_api.m_target_extension_commands[m_name][command_name] = m_api.m_commands[command_name];
+				return true;
+			} else {
+				return false;
+			}
 			return true;
 		}
 	}
@@ -471,90 +536,135 @@ public:
 	khronos_registry_visitor(XMLDocument &doc, api &api) : m_doc(doc), m_api(api) { }
 };
 
-void api::types_declare(std::ofstream &header_stream)
+void api::types_declare(std::ofstream &header_stream, std::string &indent_string)
 {
 	for (auto val : m_target_types) {
-		header_stream << "\t" << val.second << std::endl;
+		header_stream << indent_string << val.second << std::endl;
 	}
 }
 
-void api::namespace_declare(std::ofstream &header_stream)
+void api::namespace_declare(std::ofstream &header_stream, std::string &indent_string)
 {
-	header_stream << "\tnamespace " << m_name << " {" << std::endl;
-	header_stream << "\t\tenum { " << std::endl;
-	header_stream << std::hex;
-	for (auto val : m_target_enums) {
-		std::string trunc_name = val.first.substr(m_name.size() + 1);
-		header_stream << "#pragma push_macro(\"" <<  trunc_name << "\")" << std::endl;
-		header_stream << "#undef " << trunc_name << std::endl;
-		header_stream << "\t\t\t" << trunc_name << "= 0x" << val.second << "," << std::endl;
-		header_stream << "#pragma pop_macro(\"" << trunc_name << "\")" << std::endl;
+	if (m_use_api_namespaces) {
+		header_stream << indent_string << "namespace " << m_name << " {" << std::endl;
+		indent_string.push_back('\t');
 	}
-	header_stream << "\t\t}; " << std::endl;
+
+	header_stream << indent_string << "enum { " << std::endl;
+	header_stream << std::hex;
+
+	for (auto val : m_target_enums) {
+		if (m_use_api_namespaces) {
+			header_stream << "#pragma push_macro(\"" <<  val.first << "\")" << std::endl;
+			header_stream << "#undef " << val.first << std::endl;
+			header_stream << indent_string << "" << val.first << " = 0x" << val.second << "," << std::endl;
+			header_stream << "#pragma pop_macro(\"" << val.first << "\")" << std::endl;
+		} else {
+			header_stream << indent_string << "" << m_enumeration_prefix << val.first << " = 0x" << val.second << "," << std::endl;
+		}
+	}
+	header_stream << indent_string << "}; " << std::endl;
 
 	for (auto val : m_target_commands)
-		if (is_in_namespace(val.first))
-			val.second->print_declare(header_stream, m_name);
+		val.second->print_declare(header_stream, m_use_api_namespaces ? "" : m_command_prefix, indent_string);
 	for (auto iter : m_target_extension_commands)
 		for (auto val : iter.second)
-			if (is_in_namespace(val.first))
-				val.second->print_declare(header_stream, m_name);
+			val.second->print_declare(header_stream, m_use_api_namespaces ? "" : m_command_prefix, indent_string);
+
+	const char *extension_prefix = m_use_api_namespaces ? "" : m_enumeration_prefix;
 
 	for (auto extension : m_extensions)
-		header_stream << "\t\textern bool " << extension << ";" << std::endl;
+		header_stream << indent_string << "extern bool " << extension_prefix << extension << ";" << std::endl;
 
-	header_stream << "\t\tbool init();" << std::endl;
-	header_stream << "\t}" << std::endl;
+	if (m_use_api_namespaces) {
+		header_stream
+			<< indent_string << "bool init();" << std::endl;
+	} else {
+		header_stream
+			<< indent_string << "bool init_" << m_name << "();" << std::endl;
+	}
+	if (m_use_api_namespaces) {
+		indent_string.pop_back();
+		header_stream << indent_string << "}" << std::endl;
+	}
 }
 
-void api::namespace_define(std::ofstream &cpp_stream)
+void api::namespace_define(std::ofstream &cpp_stream, std::string &indent_string)
 {
-	cpp_stream << "\tnamespace " << m_name << " {" << std::endl;
+	if (m_use_api_namespaces) {
+		cpp_stream << indent_string << "namespace " << m_name << " {" << std::endl;
+		indent_string.push_back('\t');
+	}
+
+	const char *command_prefix = m_use_api_namespaces ? "" : m_command_prefix;
+	const char *extension_prefix = m_use_api_namespaces ? "" : m_enumeration_prefix;
 
 	for (auto val : m_target_commands)
-		if (is_in_namespace(val.first))
-			val.second->print_initialize(cpp_stream, m_name);
+		val.second->print_initialize(cpp_stream, command_prefix, indent_string);
 
 	for (auto iter : m_target_extension_commands)
 		for (auto val : iter.second)
-			if (is_in_namespace(val.first))
-				val.second->print_initialize(cpp_stream, m_name);
+			val.second->print_initialize(cpp_stream, command_prefix, indent_string);
 
 	cpp_stream
-		<< "\t\tstatic std::set<std::string> supported_extensions;" << std::endl;
+		<< indent_string << "static std::set<std::string> supported_extensions;" << std::endl;
 	for (auto extension : m_extensions)
 		cpp_stream
-			<< "\t\tbool " << extension << " = false;" << std::endl;
+			<< indent_string << "bool " << extension_prefix << extension << " = false;" << std::endl;
 
-	cpp_stream <<
-		"\t\tbool init()" << std::endl <<
-		"\t\t{ " << std::endl;
+	if (m_use_api_namespaces) {
+		cpp_stream
+			<< indent_string << "bool init()" << std::endl;
+	} else {
+		cpp_stream
+			<< indent_string << "bool init_" << m_name << "()" << std::endl;
+	}
+	cpp_stream
+		<< indent_string << "{ " << std::endl;
+
+	indent_string.push_back('\t');
 
 	for (auto val : m_target_commands)
-		if (is_in_namespace(val.first))
-			val.second->print_load(cpp_stream, m_name);
+		val.second->print_load(cpp_stream, m_command_prefix, !m_use_api_namespaces, indent_string);
 	for (auto iter : m_target_extension_commands)
 		for (auto val : iter.second)
-			if (is_in_namespace(val.first))
-				val.second->print_load(cpp_stream, m_name);
+			val.second->print_load(cpp_stream, m_command_prefix, !m_use_api_namespaces, indent_string);
 
 	//
 	// Identify supported gl extensions
 	//
 	if (m_name == "gl") {
 		cpp_stream
-			<< "\t\t\tGLint extension_count;" << std::endl
-			<< "\t\t\tGetIntegerv(NUM_EXTENSIONS, &extension_count);" << std::endl
-			<< "\t\t\tfor (int i = 0; i < extension_count; i++) {" << std::endl
-			<< "\t\t\t\tsupported_extensions.insert(std::string((const char *)GetStringi(EXTENSIONS, i) + 3));" << std::endl
-			<< "\t\t\t}" << std::endl;
+			<< indent_string << "GLint extension_count;" << std::endl;
+		if (m_use_api_namespaces) {
+			cpp_stream
+				<< indent_string << "GetIntegerv(NUM_EXTENSIONS, &extension_count);" << std::endl;
+		} else {
+			cpp_stream
+				<< indent_string << "glGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);" << std::endl;
+		}
+		cpp_stream
+			<< indent_string << "for (int i = 0; i < extension_count; i++) {" << std::endl;
+		indent_string.push_back('\t');
+
+		if (m_use_api_namespaces) {
+			cpp_stream
+				<< indent_string << "supported_extensions.insert(std::string((const char *)GetStringi(EXTENSIONS, i) + 3));" << std::endl;
+		} else {
+			cpp_stream
+				<< indent_string << "supported_extensions.insert(std::string((const char *)glGetStringi(GL_EXTENSIONS, i) + 3));" << std::endl;
+		}
+		indent_string.pop_back();
+
+		cpp_stream
+			<< indent_string << "}" << std::endl;
 		for (auto extension : m_extensions) {
 			//
 			// Check if the extension is in the supported extensions list
 			//
 			cpp_stream
-				<< "\t\t\t"
-				<< extension
+				<< indent_string << ""
+				<< extension_prefix << extension
 				<< " = (supported_extensions.count(\"" << extension << "\") == 1)";
 			//
 			// Check if the extension's functions have been found.
@@ -563,52 +673,63 @@ void api::namespace_define(std::ofstream &cpp_stream)
 			// which functions in this extension are in core or compatibility we will just rely on the extension string to determine
 			// support for it
 			//
+			indent_string.push_back('\t');
 			int i = 0;
 			if (extension != "EXT_direct_state_access" ) {
 				for (auto iter : m_target_extension_commands[extension]) {
 					if ((i % 4) == 0) {
-						cpp_stream << std::endl << "\t\t\t\t";
+						cpp_stream << std::endl << indent_string << "";
 					}
 					i++;
-					cpp_stream << " && " << iter.first.substr(m_name.size());
+					cpp_stream << " && " << command_prefix << iter.first;
 				}
 			}
 			cpp_stream << ";" << std::endl;
+			indent_string.pop_back();
 		}
 	} else {
 		int i = 0;
 		for (auto extension : m_extensions) {
-			cpp_stream << "\t\t\t" << extension << " = true";
+			cpp_stream << indent_string << "" << extension_prefix << extension << " = true";
+			indent_string.push_back('\t');
 			int i = 0;
 			for (auto iter : m_target_extension_commands[extension]) {
 				i++;
 				if ((i % 4) == 0) {
-					cpp_stream << std::endl << "\t\t\t\t";
+					cpp_stream << std::endl << indent_string;
 				}
-				cpp_stream << " && " << iter.first.substr(m_name.size());
+				cpp_stream << " && " << command_prefix << iter.first;
 			}
 			cpp_stream << ";" << std::endl;
+			indent_string.pop_back();
 		}
 	}
 
 	cpp_stream
-		<< "\t\t\treturn true";
+		<< indent_string << "return true";
 
+	indent_string.push_back('\t');
 	int i = 0;
 	for (auto val : m_target_commands) {
-		if (is_in_namespace(val.first)) {
-			cpp_stream << " && " << val.first.substr(m_name.size());
-			i++;
-			if ((i % 4) == 0) {
-				cpp_stream << std::endl << "\t\t\t\t";
-			}
+		i++;
+		if ((i % 4) == 0) {
+			cpp_stream << std::endl << indent_string << "";
 		}
+		cpp_stream << " && " << command_prefix << val.first;
 	}
 
 	cpp_stream
-		<< ";" << std::endl
-		<< "\t\t}" << std::endl  //init()
-		<< "\t}" << std::endl;  //namespace m_name {
+		<< ";" << std::endl;
+	indent_string.pop_back();
+
+	indent_string.pop_back();
+	cpp_stream
+		<< indent_string << "}" << std::endl;  //init()
+	if (m_use_api_namespaces) {
+		indent_string.pop_back();
+		cpp_stream
+			<< indent_string << "}" << std::endl;  //namespace m_name {
+	}
 }
 
 void api::include_type(std::string &type)
@@ -633,6 +754,7 @@ void api::bindify(XMLDocument &doc, std::string &header_name, std::ofstream &hea
 {
 	khronos_registry_visitor registry_visitor(doc, *this);
 	doc.Accept(&registry_visitor);
+	std::string indent_string;
 
 	resolve_types();
 
@@ -654,6 +776,7 @@ void api::bindify(XMLDocument &doc, std::string &header_name, std::ofstream &hea
 
 	header_stream
 		<< "namespace glbindify {" << std::endl;
+	indent_string.push_back('\t');
 
 	//
 	//We need to include these typedefs even for glx and wgl since they are referenced there without being defined
@@ -661,29 +784,33 @@ void api::bindify(XMLDocument &doc, std::string &header_name, std::ofstream &hea
 	header_stream
 		<< "#ifndef GLBINDIFY_COMMON_GL_TYPEDEFS" << std::endl
 		<< "#define GLBINDIFY_COMMON_GL_TYPEDEFS" << std::endl
-		<< "\ttypedef unsigned int GLenum;" << std::endl
-		<< "\ttypedef unsigned char GLboolean;" << std::endl
-		<< "\ttypedef unsigned int GLbitfield;" << std::endl
-		<< "\ttypedef signed char GLbyte;" << std::endl
-		<< "\ttypedef short GLshort;" << std::endl
-		<< "\ttypedef int GLint;" << std::endl
-		<< "\ttypedef unsigned char GLubyte;" << std::endl
-		<< "\ttypedef unsigned short GLushort;" << std::endl
-		<< "\ttypedef unsigned int GLuint;" << std::endl
-		<< "\ttypedef int GLsizei;" << std::endl
-		<< "\ttypedef float GLfloat;" << std::endl
-		<< "\ttypedef double GLdouble;" << std::endl
-		<< "\ttypedef ptrdiff_t GLintptr;" << std::endl
-		<< "\ttypedef ptrdiff_t GLsizeiptr;" << std::endl
+		<< indent_string << "typedef unsigned int GLenum;" << std::endl
+		<< indent_string << "typedef unsigned char GLboolean;" << std::endl
+		<< indent_string << "typedef unsigned int GLbitfield;" << std::endl
+		<< indent_string << "typedef signed char GLbyte;" << std::endl
+		<< indent_string << "typedef short GLshort;" << std::endl
+		<< indent_string << "typedef int GLint;" << std::endl
+		<< indent_string << "typedef unsigned char GLubyte;" << std::endl
+		<< indent_string << "typedef unsigned short GLushort;" << std::endl
+		<< indent_string << "typedef unsigned int GLuint;" << std::endl
+		<< indent_string << "typedef int GLsizei;" << std::endl
+		<< indent_string << "typedef float GLfloat;" << std::endl
+		<< indent_string << "typedef double GLdouble;" << std::endl
+		<< indent_string << "typedef ptrdiff_t GLintptr;" << std::endl
+		<< indent_string << "typedef ptrdiff_t GLsizeiptr;" << std::endl
 		<< "#endif" << std::endl;
 
-	types_declare(header_stream);
+	types_declare(header_stream, indent_string);
 
-	namespace_declare(header_stream);
+	namespace_declare(header_stream, indent_string);
+
+	indent_string.pop_back();
 
 	header_stream << "}" << std::endl; //namespace glbindify {
 
 	header_stream << "#endif" << std::endl;
+
+	indent_string.clear();
 
 	cpp_stream
 		<< "#include \"" << header_name << "\"" << std::endl
@@ -710,14 +837,17 @@ void api::bindify(XMLDocument &doc, std::string &header_name, std::ofstream &hea
 
 	cpp_stream << "namespace glbindify {" << std::endl;
 
-	namespace_define(cpp_stream);
+	indent_string.push_back('\t');
 
+	namespace_define(cpp_stream, indent_string);
+
+	indent_string.pop_back();
 	cpp_stream << "}" << std::endl;
 }
 
 static void usage(const char *program_name)
 {
-	std::cout << "Usage: " << program_name << " [-a api_name] [-v api_version] [-e extension] [-e extension] ..." << std::endl;
+	std::cout << "Usage: " << program_name << " [-a api_name] [-n] [-v api_version] [-e extension] [-e extension] ..." << std::endl;
 }
 
 int main(int argc, char **argv)
@@ -729,21 +859,26 @@ int main(int argc, char **argv)
 		{"api"       , 1, 0, 'a' },
 		{"extension" , 1, 0, 'e' },
 		{"version"   , 1, 0, 'v' },
+		{"api-namespaces"   , 1, 0, 'n' },
 		{"help"      , 1, 0, 'h' }
 	};
 
 	const char *api_name = "gl";
 	float api_version = 3.3;
+	bool use_api_namespace = false;
 	std::set<std::string> extensions;
 
 	while (1) {
 		int option_index;
-		int c = getopt_long(argc, argv, "a:e:v:", options, &option_index);
+		int c = getopt_long(argc, argv, "a:e:v:n", options, &option_index);
 		if (c == -1)
 			break;
 		switch (c) {
 		case 'a':
 			api_name = optarg;
+			break;
+		case 'n':
+			use_api_namespace = true;
 			break;
 		case 'e':
 			extensions.insert(optarg);
@@ -759,7 +894,7 @@ int main(int argc, char **argv)
 	}
 
 	std::cout << "Generating bindings for " << api_name << " version " << api_version << std::endl;
-	api api(api_name, api_version, extensions);
+	api api(api_name, api_version, use_api_namespace, extensions);
 
 	std::string in_filename = std::string(PKGDATADIR) + "/" + api.name() + ".xml";
 	err = doc.LoadFile(in_filename.c_str());
