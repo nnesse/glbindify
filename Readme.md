@@ -1,12 +1,12 @@
 glbindify
 =========
 
-`glbindify` is a command line tool that generates C++ bindings for OpenGL, WGL, and GLX. The generated bindings can then be included in your projects, eliminating the need to link to a seperate loader library. It supports generating bindings for compatibility contexts up to GL version 3.2 and core profile contexts for versions 3.3 to 4.5. The bindings are generated using the XML API specifications mainained by khronos so `glbindify` itself does not need to be updated to support new GL versions or extensions.
+glbindify is a command line tool that generates C++ bindings for OpenGL, WGL, and GLX. The generated bindings can then be included in your projects, eliminating the need to link to a seperate loader library. It supports generating bindings for compatibility contexts up to GL version 3.2 and core profile contexts for versions 3.3 to 4.5. The bindings are generated using XML API specifications mainained by khronos so only these XML files need to be updated to support new GL versions or extensions.
 
 Command line usage
 ------------------
 
-Generates C++ GL API bindings given the API name, the required version, and an optional list of extensions. `glbindify` will generate `glbindify_<api>.cpp` and `glbindify_<api>.hpp` where `<api>` is the name of the API passed to the command line.
+To generate bindings you must specify the API name, required version, and an optional list of extensions. The tool will generate `glbindify_<api>.cpp` and `glbindify_<api>.hpp` where `<api>` is the name of the API passed to the command line.
 
 Example: Generate GL bindings for OpenGL 3.3 with support for `EXT_texture_filter_anisotropic` and `EXT_direct_state_access` extensions
 
@@ -34,7 +34,7 @@ Example:
 		exit(-1);
 
 
-`glbindify` places typedefs such as `GLenum`, `GLint`, etc in the `glbindify` namespace and places function bindings and enums in the api specific namespaces `glbindify::gl`, `glbindify::wgl`, and `glbindify::glx`. So for example a call in a traditional C GL API call such as:    
+The tool places typedefs such as `GLenum`, `GLint`, etc in the `glbindify` namespace and places function bindings and enums in api specific namespaces `glbindify::gl`, `glbindify::wgl`, and `glbindify::glx`. For example a call in a traditional C GL API call such as:    
 
 `glBindTexture(GL_TEXTURE_2D, tex)`
 
@@ -62,4 +62,4 @@ Example:
 Dependencies
 ------------
 
-A C++11 compiler is required to build `glbindify` and it's generated bindings must also be built with at C++11 compiler. `glbindify` (and it's generated bindings) are known to build in linux, cygwin, and msys2 with gcc 4.8.2 and higher. Other configurations may work but have not been tested.
+A C++11 compiler is required to build the command line tool and but the generated bindings do not require C++11. The command line tool and it's generated bindings are known to build in linux, cygwin, and msys2 with gcc 4.8.2 and higher. Other configurations may work but have not been tested.
