@@ -194,9 +194,9 @@ public:
 		return m_version;
 	}
 
-	api(const char *name, float version, bool use_api_namespace, std::set<const char *, cstring_compare> &extensions) :
+	api(const char *name, int major_version, int_minor_version, bool use_api_namespace, std::set<const char *, cstring_compare> &extensions) :
 		m_name(name),
-		m_version(version),
+		m_version(major_version + (minor_version * 0.1f)),
 		m_extensions(extensions),
 		m_use_api_namespaces(use_api_namespace)
 	{
@@ -849,12 +849,14 @@ int main(int argc, char **argv)
 	};
 
 	const char *api_name = "gl";
-	float api_version = 3.3;
+	int api_major_version = 3;
+	int api_minor_version = 3;
 	bool use_api_namespace = false;
 	std::set<const char *, cstring_compare> extensions;
 
 	while (1) {
 		int option_index;
+		int ret;
 		int c = getopt_long(argc, argv, "a:e:v:n", options, &option_index);
 		if (c == -1)
 			break;
@@ -869,7 +871,11 @@ int main(int argc, char **argv)
 			extensions.insert(optarg);
 			break;
 		case 'v':
-			api_version = atof(optarg);
+			api_minor_version = 0;
+			ret = sscanf(optarg, "%d.%d", &api_major_version, &api_minor_version);
+			if (ret == 0) {
+				usage(argv[0]);
+			}
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -878,8 +884,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	printf("Generating bindings for %s version %1.1f\n", api_name, api_version);
-	api api(api_name, api_version, use_api_namespace, extensions);
+	printf("Generating bindings for %s version %d.%df\n", api_name, api_major_version, api_minor_version);
+	api api(api_name, api_major_version, api_minor_version, use_api_namespace, extensions);
 
 	char in_filename[200];
 	snprintf(in_filename, sizeof(in_filename),PKGDATADIR "/%s.xml", api.name());
@@ -891,8 +897,8 @@ int main(int argc, char **argv)
 
 	char header_name[100];
 	char cpp_name[100];
-	snprintf(header_name, sizeof(header_name), "glbindify_%s.hpp", api.name());
-	snprintf(cpp_name, sizeof(header_name), "glbindify_%s.cpp", api.name());
+	snprintf(header_name, sizeof(header_name), "%s_%d_%d.hpp", api.name(), api_major_version, api_minor_version);
+	snprintf(cpp_name, sizeof(header_name), "%s_%d_%d.cpp", api.name(), api_major_version, api_minor_version);
 
 	FILE *header_file = fopen(header_name, "w");
 	FILE *cpp_file = fopen(cpp_name, "w");
