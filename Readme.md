@@ -6,7 +6,8 @@ glbindify is a command line tool that generates C++ bindings for OpenGL, WGL, an
 Command line usage
 ------------------
 
-To generate bindings you must specify the API name, required version, and an optional list of extensions. The tool will generate `glbindify_<api>.cpp` and `glbindify_<api>.hpp` where `<api>` is the name of the API passed to the command line.
+To generate bindings you must specify the API name, required version, and an optional list of extensions.
+The tool will generate a C++ source file and header for the API in the current directory.
 
 Example: Generate GL bindings for OpenGL 3.3 with support for `EXT_texture_filter_anisotropic` and `EXT_direct_state_access` extensions
 
@@ -34,15 +35,19 @@ Example:
 		exit(-1);
 
 
-The tool places typedefs such as `GLenum`, `GLint`, etc in the `glbindify` namespace and places function bindings and enums in api specific namespaces `glbindify::gl`, `glbindify::wgl`, and `glbindify::glx`. For example a call in a traditional C GL API call such as:    
+The tool places typedefs such as `GLenum`, `GLint`, etc in the `glbindify` namespace and places functions and enums in the `glbindify` namespace and as well as in the API specific namespaces `glbindify::gl`, `glbindify::wgl`, and `glbindify::glx`. For brevity and clarity functions and enum's placed in API specific namespaces are not prefixed with the API name. For example a C GL API call such as:
 
 `glBindTexture(GL_TEXTURE_2D, tex)`
 
-would translate to
+could be made as:
 
-`glbindify::gl::BindTexture(gl::TEXTURE_2D, tex)`
+`glbindify::gl::BindTexture(glbindify::gl::TEXTURE_2D, tex)`
 
-The namespace encapsuation of `glbindify` avoids colliding with system headers and libraries without resorting to using macros to mangle function names as some loaders do. Include a `using namespace glbindify` statement wherever you make GL calls to help limit code verbosity .
+or
+
+`glbindify::glBindTexture(glbindify::GL_TEXTURE_2D, tex)`
+
+By encapsuating the API's in namespaces `glbindify` avoids colliding with system headers and libraries without resorting to using macros to mangle function names as some loaders do. To use `glbindify` with existing GL code include a `using namespace glbindify` statement in your sources.
 
 Extensions
 ----------
@@ -62,4 +67,4 @@ Example:
 Dependencies
 ------------
 
-A C++11 compiler is required to build the command line tool and but the generated bindings do not require C++11. The command line tool and it's generated bindings are known to build in linux, cygwin, and msys2 with gcc 4.8.2 and higher. Other configurations may work but have not been tested.
+A C++11 compiler is required to build the command line tool and but the generated bindings do not require C++11. The command line tool and it's generated bindings are known to build in Linux, Cygwin, and MSYS2 using gcc 4.8.2 and higher. Other configurations may work but have not been tested.
