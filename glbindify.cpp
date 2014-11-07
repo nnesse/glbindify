@@ -194,7 +194,7 @@ public:
 		return m_version;
 	}
 
-	api(const char *name, int major_version, int_minor_version, bool use_api_namespace, std::set<const char *, cstring_compare> &extensions) :
+	api(const char *name, int major_version, int minor_version, bool use_api_namespace, std::set<const char *, cstring_compare> &extensions) :
 		m_name(name),
 		m_version(major_version + (minor_version * 0.1f)),
 		m_extensions(extensions),
@@ -830,9 +830,16 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(cpp_file, "}\n");
 }
 
-static void usage(const char *program_name)
+static void print_help(const char *program_name)
 {
-	std::cout << "Usage: " << program_name << " [-a api_name] [-n] [-v api_version] [-e extension] [-e extension] ..." << std::endl;
+	printf("Usage: %s [OPTION]...\n", program_name);
+	printf("\n"
+	       "Options:\n"
+	       "  -a,--api <api>                     Generate bindings for API <api> Must be one\n"
+	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
+	       "  -v, --version <major>.<minor>      Version number of <api> to generate\n"
+	       "  -e, --extension <exstension-name>  Generate bindings for extension <extension-name>\n"
+	       "  -n, --api-namespaces               Put bindings in API specific namespaces\n");
 }
 
 int main(int argc, char **argv)
@@ -858,9 +865,18 @@ int main(int argc, char **argv)
 		int option_index;
 		int ret;
 		int c = getopt_long(argc, argv, "a:e:v:n", options, &option_index);
-		if (c == -1)
+		if (c == -1) {
 			break;
+		}
 		switch (c) {
+		case '?':
+		case ':':
+			print_help(argv[0]);
+			exit(-1);
+			break;
+			print_help(argv[0]);
+			exit(-1);
+			break;
 		case 'a':
 			api_name = optarg;
 			break;
@@ -874,11 +890,13 @@ int main(int argc, char **argv)
 			api_minor_version = 0;
 			ret = sscanf(optarg, "%d.%d", &api_major_version, &api_minor_version);
 			if (ret == 0) {
-				usage(argv[0]);
+				printf("Invalid version number '%s'\n\n", optarg);
+				print_help(argv[0]);
+				exit(-1);
 			}
 			break;
 		case 'h':
-			usage(argv[0]);
+			print_help(argv[0]);
 			exit(0);
 			break;
 		}
