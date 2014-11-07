@@ -118,8 +118,8 @@ struct command {
 		fprintf(out, ") = NULL;\n");
 	}
 
-	void print_load(FILE *out, const char *command_prefix, bool include_prefix, std::string &indent_string) {
-		fprintf(out, "%s%s%s = (%s (*)(", indent_string.c_str(), (include_prefix ? command_prefix : ""), name, type_decl.c_str());
+	void print_load(FILE *out, const char *command_prefix, bool strip_api_prefix, std::string &indent_string) {
+		fprintf(out, "%s%s%s = (%s (*)(", indent_string.c_str(), (strip_api_prefix ? "" : command_prefix), name, type_decl.c_str());
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(int i = 1; i < params.size(); i++) {
@@ -145,8 +145,6 @@ class api {
 	const char *m_command_prefix;
 	const char *m_enumeration_prefix;
 
-	bool m_use_api_namespaces;
-
 	std::set<const char *, cstring_compare> m_extensions;
 	float m_version;
 
@@ -166,8 +164,8 @@ class api {
 	void resolve_types();
 
 	void types_declare(FILE *header_filE, std::string &indent_string);
-	void namespace_declare(FILE *header_file, std::string &indent_string);
-	void namespace_define(FILE *header_file, std::string &indent_string);
+	void print_interface_declaration(FILE *header_file, std::string &indent_string, bool strip_api_prefix);
+	void print_interface_definition(FILE *header_file, std::string &indent_string, bool strpi_api_prefix);
 public:
 	bool is_command_in_namespace(const char **name) {
 		if (strstr(*name, m_command_prefix)) {
@@ -194,11 +192,10 @@ public:
 		return m_version;
 	}
 
-	api(const char *name, int major_version, int minor_version, bool use_api_namespace, std::set<const char *, cstring_compare> &extensions) :
+	api(const char *name, int major_version, int minor_version, std::set<const char *, cstring_compare> &extensions) :
 		m_name(name),
 		m_version(major_version + (minor_version * 0.1f)),
-		m_extensions(extensions),
-		m_use_api_namespaces(use_api_namespace)
+		m_extensions(extensions)
 	{
 		if (!strcmp(m_name,"wgl")) {
 			m_command_prefix = "wgl";
@@ -557,19 +554,14 @@ void api::types_declare(FILE *header_file, std::string &indent_string)
 	}
 }
 
-void api::namespace_declare(FILE *header_file, std::string &indent_string)
+void api::print_interface_declaration(FILE *header_file, std::string &indent_string, bool strip_api_prefix)
 {
-	const char *enumeration_prefix = m_use_api_namespaces ? "" : m_enumeration_prefix;
-
-	if (m_use_api_namespaces) {
-		fprintf(header_file, "%snamespace %s\n {\n", indent_string.c_str(), m_name);
-		indent_string.push_back('\t');
-	}
+	const char *enumeration_prefix = strip_api_prefix ? "" : m_enumeration_prefix;
 
 	fprintf(header_file, "%senum {\n", indent_string.c_str());
 
 	for (auto val : m_target_enums) {
-		if (m_use_api_namespaces) {
+		if (strip_api_prefix) {
 			fprintf(header_file, "#pragma push_macro(\"%s\")\n", val.first);
 			fprintf(header_file, "#undef %s\n", val.first);
 			fprintf(header_file, "%s%s%s = 0x%x,\n", indent_string.c_str(), enumeration_prefix, val.first, val.second);
@@ -581,36 +573,20 @@ void api::namespace_declare(FILE *header_file, std::string &indent_string)
 	fprintf(header_file, "%s};\n", indent_string.c_str());
 
 	for (auto val : m_target_commands)
-		val.second->print_declare(header_file, m_use_api_namespaces ? "" : m_command_prefix, indent_string);
+		val.second->print_declare(header_file, strip_api_prefix ? "" : m_command_prefix, indent_string);
 	for (auto iter : m_target_extension_commands)
 		for (auto val : iter.second)
-			val.second->print_declare(header_file, m_use_api_namespaces ? "" : m_command_prefix, indent_string);
+			val.second->print_declare(header_file, strip_api_prefix ? "" : m_command_prefix, indent_string);
 
-	const char *extension_prefix = m_use_api_namespaces ? "" : m_enumeration_prefix;
+	const char *extension_prefix = strip_api_prefix ? "" : m_enumeration_prefix;
 
 	for (auto extension : m_extensions)
 		fprintf(header_file, "%sextern bool %s%s;", indent_string.c_str(), extension_prefix, extension);
-
-	if (m_use_api_namespaces) {
-		fprintf(header_file, "%sbool init();\n", indent_string.c_str());
-	} else {
-		fprintf(header_file, "%sbool init_%s();\n", indent_string.c_str(), m_name);
-	}
-	if (m_use_api_namespaces) {
-		indent_string.pop_back();
-		fprintf(header_file, "%s}\n", indent_string.c_str());
-	}
 }
 
-void api::namespace_define(FILE *cpp_file, std::string &indent_string)
+void api::print_interface_definition(FILE *cpp_file, std::string &indent_string, bool strip_api_prefix)
 {
-	if (m_use_api_namespaces) {
-		fprintf(cpp_file,  "%snamespace %s {\n", indent_string.c_str(), m_name);
-		indent_string.push_back('\t');
-	}
-
-	const char *command_prefix = m_use_api_namespaces ? "" : m_command_prefix;
-	const char *extension_prefix = m_use_api_namespaces ? "" : m_enumeration_prefix;
+	const char *command_prefix = strip_api_prefix ? "" : m_command_prefix;
 
 	for (auto val : m_target_commands)
 		val.second->print_initialize(cpp_file, command_prefix, indent_string);
@@ -619,112 +595,8 @@ void api::namespace_define(FILE *cpp_file, std::string &indent_string)
 		for (auto val : iter.second)
 			val.second->print_initialize(cpp_file, command_prefix, indent_string);
 
-	fprintf(cpp_file, "%sstatic std::set<std::string> supported_extensions;\n", indent_string.c_str());
 	for (auto extension : m_extensions)
 		fprintf(cpp_file, "%sbool %s = false;\n", indent_string.c_str(), extension);
-
-	if (m_use_api_namespaces) {
-		fprintf(cpp_file, "%sbool init()\n", indent_string.c_str());
-	} else {
-		fprintf(cpp_file, "%sbool init_%s()\n", indent_string.c_str(), m_name);
-	}
-	fprintf(cpp_file, "%s{\n", indent_string.c_str());
-
-	indent_string.push_back('\t');
-
-	for (auto val : m_target_commands)
-		val.second->print_load(cpp_file, m_command_prefix, !m_use_api_namespaces, indent_string);
-	for (auto iter : m_target_extension_commands)
-		for (auto val : iter.second)
-			val.second->print_load(cpp_file, m_command_prefix, !m_use_api_namespaces, indent_string);
-
-	//
-	// Identify supported gl extensions
-	//
-	if (!strcmp(m_name,"gl")) {
-		fprintf(cpp_file, "%sGLint extension_count;\n", indent_string.c_str());
-		if (m_use_api_namespaces) {
-			fprintf(cpp_file, "%sGetIntegerv(NUM_EXTENSIONS, &extension_count);\n", indent_string.c_str());
-		} else {
-			fprintf(cpp_file, "%sglGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);\n", indent_string.c_str());
-		}
-		fprintf(cpp_file, "%sfor (int i = 0; i < extension_count; i++) {\n", indent_string.c_str());
-		indent_string.push_back('\t');
-
-		if (m_use_api_namespaces) {
-			fprintf(cpp_file, "%ssupported_extensions.insert(std::string((const char *)GetStringi(EXTENSIONS, i) + 3));\n", indent_string.c_str());
-		} else {
-			fprintf(cpp_file, "%ssupported_extensions.insert(std::string((const char *)glGetStringi(GL_EXTENSIONS, i) + 3));\n", indent_string.c_str());
-		}
-		indent_string.pop_back();
-
-		fprintf(cpp_file, "%s}\n", indent_string.c_str());
-		for (auto extension : m_extensions) {
-			//
-			// Check if the extension is in the supported extensions list
-			//
-			fprintf(cpp_file, "%s%s%s = (supported_extensions.count(\"%s\") == 1)", indent_string.c_str(),
-					extension_prefix, extension, extension);
-			//
-			// Check if the extension's functions have been found.
-			//
-			// Note: EXT_direct_state_access extends compatibility profile functions since there is no easy way to determine
-			// which functions in this extension are in core or compatibility we will just rely on the extension string to determine
-			// support for it
-			//
-			indent_string.push_back('\t');
-			int i = 0;
-			if (strcmp(extension, "EXT_direct_state_access")) {
-				for (auto iter : m_target_extension_commands[extension]) {
-					if ((i % 4) == 0) {
-						fprintf(cpp_file, "\n%s", indent_string.c_str());
-					}
-					i++;
-					fprintf(cpp_file, " && %s%s", command_prefix, iter.first.c_str());
-				}
-			}
-			fprintf(cpp_file, ";\n");
-			indent_string.pop_back();
-		}
-	} else {
-		int i = 0;
-		for (auto extension : m_extensions) {
-			fprintf(cpp_file, "%s%s%s = true", indent_string.c_str(), extension_prefix, extension);
-			indent_string.push_back('\t');
-			int i = 0;
-			for (auto iter : m_target_extension_commands[extension]) {
-				i++;
-				if ((i % 4) == 0) {
-					fprintf(cpp_file, "\n%s", indent_string.c_str());
-				}
-				fprintf(cpp_file, " && %s%s", command_prefix, iter.first.c_str());
-			}
-			fprintf(cpp_file, ";\n");
-			indent_string.pop_back();
-		}
-	}
-
-	fprintf(cpp_file, "%sreturn true", indent_string.c_str());
-
-	indent_string.push_back('\t');
-	int i = 0;
-	for (auto iter : m_target_commands) {
-		i++;
-		if ((i % 4) == 0) {
-			fprintf(cpp_file, "\n%s", indent_string.c_str());
-		}
-		fprintf(cpp_file, " && %s%s", command_prefix, iter.first);
-	}
-
-	fprintf(cpp_file, ";\n");
-	indent_string.pop_back();
-
-	indent_string.pop_back();
-	fprintf(cpp_file, "%s}\n", indent_string.c_str());
-	if (m_use_api_namespaces) {
-		indent_string.pop_back();
-		fprintf(cpp_file, "%s}\n", indent_string.c_str());
-	}
 }
 
 void api::include_type(const char *type)
@@ -790,10 +662,16 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	types_declare(header_file, indent_string);
 
-	namespace_declare(header_file, indent_string);
+	print_interface_declaration(header_file, indent_string, false);
+
+	fprintf(header_file, "%snamespace %s {\n", indent_string.c_str(), m_name);
+	indent_string.push_back('\t');
+	fprintf(header_file, "%sbool init();\n", indent_string.c_str());
+	print_interface_declaration(header_file, indent_string, true);
+	indent_string.pop_back();
+	fprintf(header_file, "%s}\n", indent_string.c_str());
 
 	indent_string.pop_back();
-
 	fprintf(header_file, "}\n"); //namespace glbindify {
 	fprintf(header_file, "#endif\n");
 
@@ -824,7 +702,107 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	indent_string.push_back('\t');
 
-	namespace_define(cpp_file, indent_string);
+	print_interface_definition(cpp_file, indent_string, false);
+	fprintf(cpp_file,  "%snamespace %s {\n", indent_string.c_str(), m_name);
+	indent_string.push_back('\t');
+	print_interface_definition(cpp_file, indent_string, true);
+
+	fprintf(cpp_file, "%sbool init()\n", indent_string.c_str());
+	fprintf(cpp_file, "%s{\n", indent_string.c_str());
+
+	indent_string.push_back('\t');
+
+	fprintf(cpp_file, "%sstd::set<std::string> supported_extensions;\n", indent_string.c_str());
+
+	for (auto val : m_target_commands) {
+		val.second->print_load(cpp_file, m_command_prefix, true, indent_string);
+		fprintf(cpp_file, "%sglbindify::%s%s = %s;\n", indent_string.c_str(), m_command_prefix, val.second->name, val.second->name);
+	}
+	for (auto iter : m_target_extension_commands) {
+		for (auto val : iter.second) {
+			val.second->print_load(cpp_file, m_command_prefix, true, indent_string);
+			fprintf(cpp_file, "%sglbindify::%s%s = %s;\n", indent_string.c_str(), m_command_prefix, val.second->name, val.second->name);
+		}
+	}
+
+	//
+	// Identify supported gl extensions
+	//
+	if (!strcmp(m_name,"gl")) {
+		fprintf(cpp_file, "%sGLint extension_count;\n", indent_string.c_str());
+		fprintf(cpp_file, "%sGetIntegerv(NUM_EXTENSIONS, &extension_count);\n", indent_string.c_str());
+		fprintf(cpp_file, "%sfor (int i = 0; i < extension_count; i++) {\n", indent_string.c_str());
+		indent_string.push_back('\t');
+
+		fprintf(cpp_file, "%ssupported_extensions.insert(std::string((const char *)GetStringi(EXTENSIONS, i) + 3));\n", indent_string.c_str());
+		indent_string.pop_back();
+
+		fprintf(cpp_file, "%s}\n", indent_string.c_str());
+		for (auto extension : m_extensions) {
+			//
+			// Check if the extension is in the supported extensions list
+			//
+			fprintf(cpp_file, "%s%s = (supported_extensions.count(\"%s\") == 1)", indent_string.c_str(),
+					extension, extension);
+			//
+			// Check if the extension's functions have been found.
+			//
+			// Note: EXT_direct_state_access extends compatibility profile functions since there is no easy way to determine
+			// which functions in this extension are in core or compatibility we will just rely on the extension string to determine
+			// support for it
+			//
+			indent_string.push_back('\t');
+			int i = 0;
+			if (strcmp(extension, "EXT_direct_state_access")) {
+				for (auto iter : m_target_extension_commands[extension]) {
+					if ((i % 4) == 0) {
+						fprintf(cpp_file, "\n%s", indent_string.c_str());
+					}
+					i++;
+					fprintf(cpp_file, " && %s", iter.first.c_str());
+				}
+			}
+			fprintf(cpp_file, ";\n");
+			indent_string.pop_back();
+		}
+	} else {
+		int i = 0;
+		for (auto extension : m_extensions) {
+			fprintf(cpp_file, "%s%s = true", indent_string.c_str(), extension);
+			indent_string.push_back('\t');
+			int i = 0;
+			for (auto iter : m_target_extension_commands[extension]) {
+				i++;
+				if ((i % 4) == 0) {
+					fprintf(cpp_file, "\n%s", indent_string.c_str());
+				}
+				fprintf(cpp_file, " && %s", iter.first.c_str());
+			}
+			fprintf(cpp_file, ";\n");
+			indent_string.pop_back();
+		}
+	}
+
+	fprintf(cpp_file, "%sreturn true", indent_string.c_str());
+
+	indent_string.push_back('\t');
+	int i = 0;
+	for (auto iter : m_target_commands) {
+		i++;
+		if ((i % 4) == 0) {
+			fprintf(cpp_file, "\n%s", indent_string.c_str());
+		}
+		fprintf(cpp_file, " && %s", iter.first);
+	}
+
+	fprintf(cpp_file, ";\n");
+	indent_string.pop_back();
+
+	indent_string.pop_back();
+	fprintf(cpp_file, "%s}\n", indent_string.c_str());
+
+	indent_string.pop_back();
+	fprintf(cpp_file, "%s}\n", indent_string.c_str());
 
 	indent_string.pop_back();
 	fprintf(cpp_file, "}\n");
@@ -838,8 +816,7 @@ static void print_help(const char *program_name)
 	       "  -a,--api <api>                     Generate bindings for API <api> Must be one\n"
 	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
 	       "  -v, --version <major>.<minor>      Version number of <api> to generate\n"
-	       "  -e, --extension <exstension-name>  Generate bindings for extension <extension-name>\n"
-	       "  -n, --api-namespaces               Put bindings in API specific namespaces\n");
+	       "  -e, --extension <exstension-name>  Generate bindings for extension <extension-name>\n");
 }
 
 int main(int argc, char **argv)
@@ -851,20 +828,18 @@ int main(int argc, char **argv)
 		{"api"       , 1, 0, 'a' },
 		{"extension" , 1, 0, 'e' },
 		{"version"   , 1, 0, 'v' },
-		{"api-namespaces"   , 0, 0, 'n' },
 		{"help"      , 0, 0, 'h' }
 	};
 
 	const char *api_name = "gl";
 	int api_major_version = 3;
 	int api_minor_version = 3;
-	bool use_api_namespace = false;
 	std::set<const char *, cstring_compare> extensions;
 
 	while (1) {
 		int option_index;
 		int ret;
-		int c = getopt_long(argc, argv, "a:e:v:n", options, &option_index);
+		int c = getopt_long(argc, argv, "a:e:v:", options, &option_index);
 		if (c == -1) {
 			break;
 		}
@@ -879,9 +854,6 @@ int main(int argc, char **argv)
 			break;
 		case 'a':
 			api_name = optarg;
-			break;
-		case 'n':
-			use_api_namespace = true;
 			break;
 		case 'e':
 			extensions.insert(optarg);
@@ -903,7 +875,7 @@ int main(int argc, char **argv)
 	}
 
 	printf("Generating bindings for %s version %d.%df\n", api_name, api_major_version, api_minor_version);
-	api api(api_name, api_major_version, api_minor_version, use_api_namespace, extensions);
+	api api(api_name, api_major_version, api_minor_version, extensions);
 
 	char in_filename[200];
 	snprintf(in_filename, sizeof(in_filename),PKGDATADIR "/%s.xml", api.name());
