@@ -874,7 +874,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	printf("Generating bindings for %s version %d.%df\n", api_name, api_major_version, api_minor_version);
+	printf("Generating bindings for %s version %d.%d\n", api_name, api_major_version, api_minor_version);
 	api api(api_name, api_major_version, api_minor_version, extensions);
 
 	char in_filename[200];
