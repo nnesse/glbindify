@@ -339,17 +339,18 @@ class enumeration_visitor : public data_builder_visitor<enumeration>
 		if (tag_test(elem, "enum")) {
 			if (elem.Attribute("api") && strcmp(elem.Attribute("api"), m_api.m_name))
 				return false;
-			unsigned int val;
+			unsigned int val = 0xffffffff;
 			int ret = sscanf(elem.Attribute("value"), "0x%x", &val);
-			if (!ret)
+			if (ret != 1)
 				ret = sscanf(elem.Attribute("value"), "%d", &val);
 			const char *enumeration_name = elem.Attribute("name");
-
-			if (ret) {
+			if (ret == 1) {
 				if (m_api.is_enum_in_namespace(&enumeration_name)) {
 					m_data->enum_map[enumeration_name] = val;
 					m_api.m_enum_map[enumeration_name] = val;
 				}
+			} else {
+				printf("warning: can't parse value of enum %s: \"%s\"\n", elem.Attribute("name"), elem.Attribute("value"));
 			}
 		}
 		return false;
@@ -437,7 +438,7 @@ class extension_visitor :  public XMLVisitor
 		} else if (tag_stack_test(elem, "enum", "require")) {
 			const char *enumeration_name = elem.Attribute("name");
 			if (m_api.is_enum_in_namespace(&enumeration_name)) {
-				m_api.m_target_enums[enumeration_name] = m_api.m_enum_map[elem.Attribute("name")];
+				m_api.m_target_enums[enumeration_name] = m_api.m_enum_map[enumeration_name];
 				return true;
 			} else {
 				return false;
