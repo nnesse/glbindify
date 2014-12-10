@@ -654,6 +654,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	}
 	fprintf(header_file, "#include <stdint.h>\n");
 	fprintf(header_file, "#include <stddef.h>\n");
+	fprintf(header_file, "#include <string.h>\n");
 	if (m_language == language::C) {
 		fprintf(header_file, "#include <stdbool.h>\n");
 	}
@@ -799,13 +800,12 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 		indent_string.push_back('\t');
 
 		for (auto extension : m_extensions) {
-			fprintf(source_file, "%sif (!strcmp(%s,GetStringi(EXTENSIONS, i) + 3)) {\n",
+			fprintf(source_file, "%sif (!strcmp(\"%s\",(const char *)(GetStringi(GL_EXTENSIONS, i) + 3)))\n",
 				indent_string.c_str(), extension);
 			fprintf(source_file, "%s\t%s%s = true;\n",
 				indent_string.c_str(),
 				m_language == language::C ? "GL_" : "",
 				extension);
-			fprintf(source_file, "}\n");
 
 			//
 			// Check if the extension's functions have been found.
@@ -814,8 +814,12 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 			// which functions in this extension are in core or compatibility we will just rely on the extension string to determine
 			// support for it
 			//
-			indent_string.push_back('\t');
 			int i = 0;
+			fprintf(source_file, "%s%s%s = true",
+				indent_string.c_str(),
+				m_language == language::C ? "GL_" : "",
+				extension);
+			indent_string.push_back('\t');
 			if (strcmp(extension, "EXT_direct_state_access")) {
 				for (auto iter : m_target_extension_commands[extension]) {
 					if ((i % 4) == 0) {
@@ -827,8 +831,8 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 						iter.first.c_str());
 				}
 			}
-			fprintf(source_file, ";\n");
 			indent_string.pop_back();
+			fprintf(source_file, ";\n");
 		}
 		indent_string.pop_back();
 		fprintf(source_file, "%s}\n", indent_string.c_str()); // for (int i = 0; i < extension_count...
