@@ -148,6 +148,7 @@ class api {
 	//Api description
 	const char *m_name;
 	const char *m_command_prefix;
+	const char *m_mangle_prefix;
 	const char *m_enumeration_prefix;
 
 	std::set<const char *, cstring_compare> m_extensions;
@@ -164,6 +165,7 @@ class api {
 	std::map<const char *, unsigned int, cstring_compare> m_target_enums;
 	std::map<const char *, command_ptr, cstring_compare> m_target_commands;
 	std::map<const char *, std::map<std::string, command_ptr>, cstring_compare > m_target_extension_commands;
+	std::vector<command_ptr> m_target_all_commands;
 
 	language m_language;
 
@@ -208,15 +210,31 @@ public:
 		m_extensions(extensions),
 		m_language(lang)
 	{
-		if (!strcmp(m_name,"wgl")) {
-			m_command_prefix = "wgl";
-			m_enumeration_prefix = "WGL_";
-		} else if (!strcmp(m_name,"glx")) {
-			m_command_prefix = "glX";
-			m_enumeration_prefix = "GLX_";
-		} else if (!strcmp(m_name,"gl")) {
-			m_command_prefix = "gl";
-			m_enumeration_prefix = "GL_";
+		if (lang == language::C) {
+			if (!strcmp(m_name,"wgl")) {
+				m_command_prefix = "wgl";
+				m_mangle_prefix = "_glb_wgl";
+				m_enumeration_prefix = "WGL_";
+			} else if (!strcmp(m_name,"glx")) {
+				m_command_prefix = "glX";
+				m_mangle_prefix = "_glb_glX";
+				m_enumeration_prefix = "GLX_";
+			} else if (!strcmp(m_name,"gl")) {
+				m_command_prefix = "gl";
+				m_mangle_prefix = "_glb_gl";
+				m_enumeration_prefix = "GL_";
+			}
+		} else {
+			if (!strcmp(m_name,"wgl")) {
+				m_mangle_prefix = m_command_prefix = "wgl";
+				m_enumeration_prefix = "WGL_";
+			} else if (!strcmp(m_name,"glx")) {
+				m_mangle_prefix = m_command_prefix = "glX";
+				m_enumeration_prefix = "GLX_";
+			} else if (!strcmp(m_name,"gl")) {
+				m_mangle_prefix = m_command_prefix = "gl";
+				m_enumeration_prefix = "GL_";
+			}
 		}
 	}
 	void bindify(XMLDocument &doc, const char *header_name, FILE *header_file, FILE *source_file);
@@ -570,8 +588,10 @@ void api::print_interface_declaration(FILE *header_file, std::string &indent_str
 {
 	const char *enumeration_prefix = strip_api_prefix ? "" : m_enumeration_prefix;
 
+	fprintf(header_file, "%s\n", indent_string.c_str());
 	fprintf(header_file, "%senum {\n", indent_string.c_str());
 
+	indent_string.push_back('\t');
 	for (auto val : m_target_enums) {
 		if (strip_api_prefix) {
 			fprintf(header_file, "#pragma push_macro(\"%s\")\n", val.first);
@@ -582,16 +602,23 @@ void api::print_interface_declaration(FILE *header_file, std::string &indent_str
 			fprintf(header_file, "%s%s%s = 0x%x,\n", indent_string.c_str(), enumeration_prefix, val.first, val.second);
 		}
 	}
+	indent_string.pop_back();
 	fprintf(header_file, "%s};\n", indent_string.c_str());
 
-	for (auto val : m_target_commands)
-		val.second->print_declare(header_file, strip_api_prefix ? "" : m_command_prefix, indent_string);
-	for (auto iter : m_target_extension_commands)
-		for (auto val : iter.second)
-			val.second->print_declare(header_file, strip_api_prefix ? "" : m_command_prefix, indent_string);
+	fprintf(header_file, "%s\n", indent_string.c_str());
+	for (auto command : m_target_all_commands) {
+		if (m_language == language::C) {
+			fprintf(header_file, "#define %s%s %s%s\n",
+					m_command_prefix, command->name,
+					m_mangle_prefix, command->name);
+		}
+		command->print_declare(header_file,
+				strip_api_prefix ? "" : m_command_prefix,
+				indent_string);
+	}
 
+	fprintf(header_file, "%s\n", indent_string.c_str());
 	const char *extension_prefix = strip_api_prefix ? "" : m_enumeration_prefix;
-
 	for (auto extension : m_extensions)
 		fprintf(header_file, "%sextern bool %s%s;\n", indent_string.c_str(), extension_prefix, extension);
 }
@@ -600,15 +627,15 @@ void api::print_interface_definition(FILE *source_file, std::string &indent_stri
 {
 	const char *command_prefix = strip_api_prefix ? "" : m_command_prefix;
 
-	for (auto val : m_target_commands)
-		val.second->print_initialize(source_file, command_prefix, indent_string);
+	fprintf(source_file, "%s\n", indent_string.c_str());
+	for (auto command : m_target_all_commands)
+		command->print_initialize(source_file, command_prefix, indent_string);
 
-	for (auto iter : m_target_extension_commands)
-		for (auto val : iter.second)
-			val.second->print_initialize(source_file, command_prefix, indent_string);
-
+	fprintf(source_file, "%s\n", indent_string.c_str());
 	for (auto extension : m_extensions)
-		fprintf(source_file, "%sbool %s = false;\n", indent_string.c_str(), extension);
+		fprintf(source_file, "%sbool %s%s = false;\n", indent_string.c_str(),
+				strip_api_prefix ? "" : m_enumeration_prefix,
+				extension);
 }
 
 void api::include_type(const char *type)
@@ -620,8 +647,7 @@ void api::include_type(const char *type)
 
 void api::resolve_types()
 {
-	for (auto val : m_target_commands) {
-		command_ptr command = val.second;
+	for (auto command: m_target_all_commands) {
 		include_type(command->type);
 		for (auto param : command->params) {
 			include_type(param.type);
@@ -634,6 +660,18 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	khronos_registry_visitor registry_visitor(doc, *this);
 	doc.Accept(&registry_visitor);
 	std::string indent_string;
+
+	//Make a combined list of all selected core and extension commands
+	for (auto val : m_target_commands) {
+		command_ptr command = val.second;
+		m_target_all_commands.push_back(command);
+	}
+	for (auto iter : m_target_extension_commands) {
+		for (auto val : iter.second) {
+			command_ptr command = val.second;
+			m_target_all_commands.push_back(command);
+		}
+	}
 
 	resolve_types();
 
@@ -687,9 +725,9 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	types_declare(header_file, indent_string);
 
-
 	print_interface_declaration(header_file, indent_string, false);
 
+	fprintf(header_file, "%s\n", indent_string.c_str());
 	if (m_language == language::CPP) {
 		fprintf(header_file, "%snamespace %s {\n", indent_string.c_str(), m_name);
 		indent_string.push_back('\t');
@@ -703,6 +741,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 		fprintf(header_file, "%sbool init_%s();\n", indent_string.c_str(), m_name);
 	}
 
+	fprintf(header_file, "%s\n", indent_string.c_str());
 	if (m_language == language::C) {
 		fprintf(header_file, "#ifdef __cplusplus\n");
 		fprintf(header_file, "}\n"); //extern "C" {
@@ -737,6 +776,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(source_file, "}\n");
 	fprintf(source_file, "#endif\n");
 
+	fprintf(source_file, "%s\n", indent_string.c_str());
 	if (m_language == language::CPP) {
 		fprintf(source_file, "namespace glbindify {\n");
 		indent_string.push_back('\t');
@@ -745,6 +785,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	print_interface_definition(source_file, indent_string, false);
 
 	if (m_language == language::CPP) {
+		fprintf(source_file, "%s\n", indent_string.c_str());
 		fprintf(source_file,  "%snamespace %s {\n", indent_string.c_str(), m_name);
 		indent_string.push_back('\t');
 		print_interface_definition(source_file, indent_string, true);
@@ -758,34 +799,16 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(source_file, "%s{\n", indent_string.c_str());
 	indent_string.push_back('\t');
 
-	for (auto val : m_target_commands) {
+	for (auto command : m_target_all_commands) {
 		if (m_language == language::CPP) {
-			val.second->print_load(source_file, m_command_prefix, true, indent_string);
+			command->print_load(source_file, m_command_prefix, true, indent_string);
 			fprintf(source_file, "%sglbindify::%s%s = %s;\n",
 				indent_string.c_str(),
 				m_command_prefix,
-				val.second->name,
-				val.second->name);
+				command->name,
+				command->name);
 		} else {
-			val.second->print_load(source_file, m_command_prefix, false, indent_string);
-		}
-	}
-	for (auto iter : m_target_extension_commands) {
-		for (auto val : iter.second) {
-			val.second->print_load(source_file, m_command_prefix, true, indent_string);
-			if (m_language == language::CPP) {
-				fprintf(source_file, "%sglbindify::%s%s = %s;\n",
-					indent_string.c_str(),
-					m_command_prefix,
-					val.second->name,
-					val.second->name);
-			} else {
-				fprintf(source_file, "%s%s%s = %s;\n",
-					indent_string.c_str(),
-					m_command_prefix,
-					val.second->name,
-					val.second->name);
-			}
+			command->print_load(source_file, m_command_prefix, false, indent_string);
 		}
 	}
 
@@ -793,6 +816,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	// Identify supported gl extensions
 	//
 	if (!strcmp(m_name,"gl")) {
+		fprintf(source_file, "%s\n", indent_string.c_str());
 		fprintf(source_file, "%sGLint extension_count;\n", indent_string.c_str());
 		fprintf(source_file, "%sglGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);\n", indent_string.c_str());
 		fprintf(source_file, "%sint i;\n", indent_string.c_str());
@@ -800,13 +824,19 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 		indent_string.push_back('\t');
 
 		for (auto extension : m_extensions) {
-			fprintf(source_file, "%sif (!strcmp(\"%s\",(const char *)(GetStringi(GL_EXTENSIONS, i) + 3)))\n",
+			fprintf(source_file, "%sif (!strcmp(\"%s\",(const char *)(glGetStringi(GL_EXTENSIONS, i) + 3)))\n",
 				indent_string.c_str(), extension);
 			fprintf(source_file, "%s\t%s%s = true;\n",
 				indent_string.c_str(),
 				m_language == language::C ? "GL_" : "",
 				extension);
+		}
+		indent_string.pop_back();
+		fprintf(source_file, "%s}\n", indent_string.c_str()); // for (int i = 0; i < extension_count...
 
+		if (m_extensions.size())
+			fprintf(source_file, "%s\n", indent_string.c_str());
+		for (auto extension : m_extensions) {
 			//
 			// Check if the extension's functions have been found.
 			//
@@ -814,65 +844,81 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 			// which functions in this extension are in core or compatibility we will just rely on the extension string to determine
 			// support for it
 			//
-			int i = 0;
-			fprintf(source_file, "%s%s%s = true",
-				indent_string.c_str(),
-				m_language == language::C ? "GL_" : "",
-				extension);
-			indent_string.push_back('\t');
-			if (strcmp(extension, "EXT_direct_state_access")) {
+			if (strcmp(extension, "EXT_direct_state_access") && m_target_extension_commands[extension].size()) {
+				int i = 0;
+				fprintf(source_file, "%s%s%s = ",
+					indent_string.c_str(),
+					m_language == language::C ? "GL_" : "",
+					extension,
+					m_language == language::C ? "GL_" : "",
+					extension);
+				indent_string.push_back('\t');
 				for (auto iter : m_target_extension_commands[extension]) {
-					if ((i % 4) == 0) {
+					if ((i % 4) == 3) {
 						fprintf(source_file, "\n%s", indent_string.c_str());
 					}
-					i++;
-					fprintf(source_file, " && %s%s",
-						m_language == language::C ? "gl" : "",
+					if (i)
+						fprintf(source_file, " && ");
+					fprintf(source_file, "%s%s",
+						m_language == language::C ? m_command_prefix : "",
 						iter.first.c_str());
+					i++;
 				}
+				fprintf(source_file, ";\n"); // for (int i = 0; i < extension_count...
+				indent_string.pop_back();
 			}
-			indent_string.pop_back();
-			fprintf(source_file, ";\n");
 		}
-		indent_string.pop_back();
-		fprintf(source_file, "%s}\n", indent_string.c_str()); // for (int i = 0; i < extension_count...
 	} else {
 		int i = 0;
 		for (auto extension : m_extensions) {
-			fprintf(source_file, "%s%s%s = true",
-				indent_string.c_str(),
-				m_language == language::C ? "GL_" : "",
-				extension);
-			indent_string.push_back('\t');
-			int i = 0;
-			for (auto iter : m_target_extension_commands[extension]) {
-				i++;
-				if ((i % 4) == 0) {
-					fprintf(source_file, "\n%s", indent_string.c_str());
+			if (m_target_extension_commands[extension].size()) {
+				fprintf(source_file, "%s%s%s = %s%s && ",
+					indent_string.c_str(),
+					m_language == language::C ? m_enumeration_prefix : "",
+					extension,
+					m_language == language::C ? m_enumeration_prefix : "",
+					extension);
+				indent_string.push_back('\t');
+				int i = 0;
+				for (auto iter : m_target_extension_commands[extension]) {
+					if ((i % 4) == 3) {
+						fprintf(source_file, "\n%s", indent_string.c_str());
+					}
+					if (i)
+						fprintf(source_file, " && ");
+					fprintf(source_file, "%s%s",
+						m_language == language::C ? m_command_prefix : "",
+						iter.first.c_str());
+					i++;
 				}
-				fprintf(source_file, " && %s%s",
-					m_language == language::C ? "gl" : "",
-					iter.first.c_str());
+				fprintf(source_file, ";\n");
+			} else {
+				fprintf(source_file, "%s%s%s = true;",
+					indent_string.c_str(),
+					m_language == language::C ? m_enumeration_prefix : "",
+					extension);
 			}
-			fprintf(source_file, ";\n");
 			indent_string.pop_back();
 		}
 	}
 
-	fprintf(source_file, "%sreturn true", indent_string.c_str());
+	fprintf(source_file, "%s\n", indent_string.c_str());
+	fprintf(source_file, "%sreturn ", indent_string.c_str());
 	indent_string.push_back('\t');
 
 	int i = 0;
 	for (auto iter : m_target_commands) {
-		i++;
-		if ((i % 4) == 0) {
+		if ((i % 4) == 3) {
 			fprintf(source_file, "\n%s", indent_string.c_str());
 		}
+		if (i)
+			fprintf(source_file, " && ");
 		if (m_language == language::CPP) {
-			fprintf(source_file, " && %s", iter.first);
+			fprintf(source_file, "%s", iter.first);
 		} else {
-			fprintf(source_file, " && %s%s", m_command_prefix, iter.first);
+			fprintf(source_file, "%s%s", m_command_prefix, iter.first);
 		}
+		i++;
 	}
 
 	fprintf(source_file, ";\n");
