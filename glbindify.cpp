@@ -133,11 +133,6 @@ struct command {
 };
 typedef std::shared_ptr<command> command_ptr;
 
-enum class language {
-	C,
-	CPP
-};
-
 class api {
 	friend class enumeration_visitor;
 	friend class feature_visitor;
@@ -166,8 +161,6 @@ class api {
 	std::map<const char *, command_ptr, cstring_compare> m_target_commands;
 	std::map<const char *, std::map<std::string, command_ptr>, cstring_compare > m_target_extension_commands;
 	std::vector<command_ptr> m_target_all_commands;
-
-	language m_language;
 
 	void include_type(const char *type);
 	void resolve_types();
@@ -202,39 +195,24 @@ public:
 	}
 
 	api(const char *name,
-			language lang,
 			int major_version, int minor_version,
 			std::set<const char *, cstring_compare> &extensions) :
 		m_name(name),
 		m_version(major_version + (minor_version * 0.1f)),
-		m_extensions(extensions),
-		m_language(lang)
+		m_extensions(extensions)
 	{
-		if (lang == language::C) {
-			if (!strcmp(m_name,"wgl")) {
-				m_command_prefix = "wgl";
-				m_mangle_prefix = "_glb_wgl";
-				m_enumeration_prefix = "WGL_";
-			} else if (!strcmp(m_name,"glx")) {
-				m_command_prefix = "glX";
-				m_mangle_prefix = "_glb_glX";
-				m_enumeration_prefix = "GLX_";
-			} else if (!strcmp(m_name,"gl")) {
-				m_command_prefix = "gl";
-				m_mangle_prefix = "_glb_gl";
-				m_enumeration_prefix = "GL_";
-			}
-		} else {
-			if (!strcmp(m_name,"wgl")) {
-				m_mangle_prefix = m_command_prefix = "wgl";
-				m_enumeration_prefix = "WGL_";
-			} else if (!strcmp(m_name,"glx")) {
-				m_mangle_prefix = m_command_prefix = "glX";
-				m_enumeration_prefix = "GLX_";
-			} else if (!strcmp(m_name,"gl")) {
-				m_mangle_prefix = m_command_prefix = "gl";
-				m_enumeration_prefix = "GL_";
-			}
+		if (!strcmp(m_name,"wgl")) {
+			m_command_prefix = "wgl";
+			m_mangle_prefix = "_glb_wgl";
+			m_enumeration_prefix = "WGL_";
+		} else if (!strcmp(m_name,"glx")) {
+			m_command_prefix = "glX";
+			m_mangle_prefix = "_glb_glX";
+			m_enumeration_prefix = "GLX_";
+		} else if (!strcmp(m_name,"gl")) {
+			m_command_prefix = "gl";
+			m_mangle_prefix = "_glb_gl";
+			m_enumeration_prefix = "GL_";
 		}
 	}
 	void bindify(XMLDocument &doc, const char *header_name, FILE *header_file, FILE *source_file);
@@ -607,11 +585,9 @@ void api::print_interface_declaration(FILE *header_file, std::string &indent_str
 
 	fprintf(header_file, "%s\n", indent_string.c_str());
 	for (auto command : m_target_all_commands) {
-		if (m_language == language::C) {
-			fprintf(header_file, "#define %s%s %s%s\n",
-					m_command_prefix, command->name,
-					m_mangle_prefix, command->name);
-		}
+		fprintf(header_file, "#define %s%s %s%s\n",
+				m_command_prefix, command->name,
+				m_mangle_prefix, command->name);
 		command->print_declare(header_file,
 				strip_api_prefix ? "" : m_command_prefix,
 				indent_string);
@@ -678,11 +654,9 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", m_name);
 	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", m_name);
 
-	if (m_language == language::C) {
-		fprintf(header_file, "#ifdef __cplusplus\n");
-		fprintf(header_file, "extern \"C\" {\n");
-		fprintf(header_file, "#endif\n");
-	}
+	fprintf(header_file, "#ifdef __cplusplus\n");
+	fprintf(header_file, "extern \"C\" {\n");
+	fprintf(header_file, "#endif\n");
 
 	if (!strcmp(m_name, "glx")) {
 		fprintf(header_file, "#include <X11/Xlib.h>\n");
@@ -693,14 +667,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(header_file, "#include <stdint.h>\n");
 	fprintf(header_file, "#include <stddef.h>\n");
 	fprintf(header_file, "#include <string.h>\n");
-	if (m_language == language::C) {
-		fprintf(header_file, "#include <stdbool.h>\n");
-	}
-
-	if (m_language == language::CPP) {
-		fprintf(header_file, "namespace glbindify {\n");
-		indent_string.push_back('\t');
-	}
+	fprintf(header_file, "#include <stdbool.h>\n");
 
 	//
 	//We need to include these typedefs even for glx and wgl since they are referenced there without being defined
@@ -728,25 +695,12 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	print_interface_declaration(header_file, indent_string, false);
 
 	fprintf(header_file, "%s\n", indent_string.c_str());
-	if (m_language == language::CPP) {
-		fprintf(header_file, "%snamespace %s {\n", indent_string.c_str(), m_name);
-		indent_string.push_back('\t');
-		fprintf(header_file, "%sbool init();\n", indent_string.c_str());
-		print_interface_declaration(header_file, indent_string, true);
-		indent_string.pop_back();
-		fprintf(header_file, "%s}\n", indent_string.c_str());
-		indent_string.pop_back();
-		fprintf(header_file, "}\n"); //namespace glbindify {
-	} else {
-		fprintf(header_file, "%sbool init_%s();\n", indent_string.c_str(), m_name);
-	}
+	fprintf(header_file, "%sbool init_%s();\n", indent_string.c_str(), m_name);
 
 	fprintf(header_file, "%s\n", indent_string.c_str());
-	if (m_language == language::C) {
-		fprintf(header_file, "#ifdef __cplusplus\n");
-		fprintf(header_file, "}\n"); //extern "C" {
-		fprintf(header_file, "#endif\n");
-	}
+	fprintf(header_file, "#ifdef __cplusplus\n");
+	fprintf(header_file, "}\n"); //extern "C" {
+	fprintf(header_file, "#endif\n");
 
 	fprintf(header_file, "#endif\n");
 
@@ -754,13 +708,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	fprintf(source_file, "#include \"%s\"\n", header_name);
 	fprintf(source_file, "#ifndef _WIN32\n");
-	if (m_language == language::CPP) {
-		fprintf(source_file, "extern \"C\" {\n");
-	}
 	fprintf(source_file, "extern void (*glXGetProcAddress(const unsigned char *))(void);\n");
-	if (m_language == language::CPP) {
-		fprintf(source_file, "}\n");
-	}
 	fprintf(source_file, "static inline void (*LoadProcAddress(const char *name))(void) {\n");
 	fprintf(source_file, "\treturn (*glXGetProcAddress)((const unsigned char *)name);\n");
 	fprintf(source_file, "}\n");
@@ -777,39 +725,15 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(source_file, "#endif\n");
 
 	fprintf(source_file, "%s\n", indent_string.c_str());
-	if (m_language == language::CPP) {
-		fprintf(source_file, "namespace glbindify {\n");
-		indent_string.push_back('\t');
-	}
 
 	print_interface_definition(source_file, indent_string, false);
 
-	if (m_language == language::CPP) {
-		fprintf(source_file, "%s\n", indent_string.c_str());
-		fprintf(source_file,  "%snamespace %s {\n", indent_string.c_str(), m_name);
-		indent_string.push_back('\t');
-		print_interface_definition(source_file, indent_string, true);
-	}
-
-	if (m_language == language::CPP) {
-		fprintf(source_file, "%sbool init()\n", indent_string.c_str());
-	} else {
-		fprintf(source_file, "%sbool init_%s()\n", indent_string.c_str(), m_name);
-	}
+	fprintf(source_file, "%sbool init_%s()\n", indent_string.c_str(), m_name);
 	fprintf(source_file, "%s{\n", indent_string.c_str());
 	indent_string.push_back('\t');
 
 	for (auto command : m_target_all_commands) {
-		if (m_language == language::CPP) {
-			command->print_load(source_file, m_command_prefix, true, indent_string);
-			fprintf(source_file, "%sglbindify::%s%s = %s;\n",
-				indent_string.c_str(),
-				m_command_prefix,
-				command->name,
-				command->name);
-		} else {
-			command->print_load(source_file, m_command_prefix, false, indent_string);
-		}
+		command->print_load(source_file, m_command_prefix, false, indent_string);
 	}
 
 	//
@@ -826,9 +750,8 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 		for (auto extension : m_extensions) {
 			fprintf(source_file, "%sif (!strcmp(\"%s\",(const char *)(glGetStringi(GL_EXTENSIONS, i) + 3)))\n",
 				indent_string.c_str(), extension);
-			fprintf(source_file, "%s\t%s%s = true;\n",
+			fprintf(source_file, "%s\tGL_%s = true;\n",
 				indent_string.c_str(),
-				m_language == language::C ? "GL_" : "",
 				extension);
 		}
 		indent_string.pop_back();
@@ -846,11 +769,8 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 			//
 			if (strcmp(extension, "EXT_direct_state_access") && m_target_extension_commands[extension].size()) {
 				int i = 0;
-				fprintf(source_file, "%s%s%s = ",
+				fprintf(source_file, "%sGL_%s = ",
 					indent_string.c_str(),
-					m_language == language::C ? "GL_" : "",
-					extension,
-					m_language == language::C ? "GL_" : "",
 					extension);
 				indent_string.push_back('\t');
 				for (auto iter : m_target_extension_commands[extension]) {
@@ -860,7 +780,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 					if (i)
 						fprintf(source_file, " && ");
 					fprintf(source_file, "%s%s",
-						m_language == language::C ? m_command_prefix : "",
+						m_command_prefix,
 						iter.first.c_str());
 					i++;
 				}
@@ -874,9 +794,9 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 			if (m_target_extension_commands[extension].size()) {
 				fprintf(source_file, "%s%s%s = %s%s && ",
 					indent_string.c_str(),
-					m_language == language::C ? m_enumeration_prefix : "",
+					m_enumeration_prefix,
 					extension,
-					m_language == language::C ? m_enumeration_prefix : "",
+					m_enumeration_prefix,
 					extension);
 				indent_string.push_back('\t');
 				int i = 0;
@@ -887,7 +807,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 					if (i)
 						fprintf(source_file, " && ");
 					fprintf(source_file, "%s%s",
-						m_language == language::C ? m_command_prefix : "",
+						m_command_prefix,
 						iter.first.c_str());
 					i++;
 				}
@@ -895,7 +815,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 			} else {
 				fprintf(source_file, "%s%s%s = true;",
 					indent_string.c_str(),
-					m_language == language::C ? m_enumeration_prefix : "",
+					m_enumeration_prefix,
 					extension);
 			}
 			indent_string.pop_back();
@@ -913,11 +833,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 		}
 		if (i)
 			fprintf(source_file, " && ");
-		if (m_language == language::CPP) {
-			fprintf(source_file, "%s", iter.first);
-		} else {
-			fprintf(source_file, "%s%s", m_command_prefix, iter.first);
-		}
+		fprintf(source_file, "%s%s", m_command_prefix, iter.first);
 		i++;
 	}
 
@@ -926,14 +842,6 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	indent_string.pop_back();
 	fprintf(source_file, "%s}\n", indent_string.c_str()); //init()
-
-	if (m_language == language::CPP) {
-		indent_string.pop_back();
-		fprintf(source_file, "%s}\n", indent_string.c_str()); //namespace <api> {
-
-		indent_string.pop_back();
-		fprintf(source_file, "}\n"); //namespace glbindify {
-	}
 }
 
 static void print_help(const char *program_name)
@@ -943,8 +851,6 @@ static void print_help(const char *program_name)
 	       "Options:\n"
 	       "  -a,--api <api>                     Generate bindings for API <api>. Must be one\n"
 	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
-	       "  -l,--language <language>           Language to generate bindings for. Supported \n"
-	       "                                     values are 'C' and 'C++'. Default is 'C++'.\n"
 	       "  -v, --version <major>.<minor>      Version number of <api> to generate\n"
 	       "  -e, --extension <exstension-name>  Generate bindings for extension <extension-name>\n");
 }
@@ -956,15 +862,12 @@ int main(int argc, char **argv)
 
 	static struct option options [] = {
 		{"api"       , 1, 0, 'a' },
-		{"language"  , 1, 0, 'l' },
 		{"extension" , 1, 0, 'e' },
 		{"version"   , 1, 0, 'v' },
 		{"help"      , 0, 0, 'h' }
 	};
 
 	const char *api_name = "gl";
-	language lang = language::CPP;
-	const char *lang_str = "C++";
 	int api_major_version = 3;
 	int api_minor_version = 3;
 	std::set<const char *, cstring_compare> extensions;
@@ -988,18 +891,6 @@ int main(int argc, char **argv)
 		case 'a':
 			api_name = optarg;
 			break;
-		case 'l':
-			if (!strcmp(optarg, "C")) {
-				lang = language::C;
-			} else if (!strcmp(optarg, "C++")) {
-				lang = language::CPP;
-			} else {
-				printf("Invalid language choice '%s'\n\n", optarg);
-				print_help(argv[0]);
-				exit(-1);
-			}
-			lang_str = optarg;
-			break;
 		case 'e':
 			extensions.insert(optarg);
 			break;
@@ -1019,22 +910,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	const char *source_ext;
-	const char *header_ext;
-	switch (lang)
-	{
-	case language::C:
-		source_ext = ".c";
-		header_ext = ".h";
-		break;
-	case language::CPP:
-		source_ext = ".cpp";
-		header_ext = ".hpp";
-		break;
-	}
-
-	printf("Generating %s bindings for %s version %d.%d\n", lang_str, api_name, api_major_version, api_minor_version);
-	api api(api_name, lang, api_major_version, api_minor_version, extensions);
+	printf("Generating bindings for %s version %d.%d\n", api_name, api_major_version, api_minor_version);
+	api api(api_name, api_major_version, api_minor_version, extensions);
 
 	char in_filename[200];
 	snprintf(in_filename, sizeof(in_filename),PKGDATADIR "/%s.xml", api.name());
@@ -1050,12 +927,12 @@ int main(int argc, char **argv)
 		api.name(),
 		api_major_version,
 		api_minor_version,
-		header_ext);
+		".h");
 	snprintf(cpp_name, sizeof(header_name), "%s_%d_%d%s",
 		api.name(),
 		api_major_version,
 		api_minor_version,
-		source_ext);
+		".c");
 
 	FILE *header_file = fopen(header_name, "w");
 	FILE *source_file = fopen(cpp_name, "w");

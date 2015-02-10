@@ -1,7 +1,14 @@
 glbindify
 =========
 
-glbindify is a command line tool that can generate C or C++ bindings for OpenGL, WGL, and GLX. The generated bindings can then be included in your projects, eliminating the need to link to a seperate loader library. It supports generating bindings for compatibility contexts up to GL version 3.2 and core profile contexts for versions 3.3 to 4.5. The bindings are generated using XML API specifications mainained by khronos so only these XML files need to be updated to support new GL versions or extensions.
+glbindify is a command line tool that generates C bindings for OpenGL, WGL, and GLX. The generated bindings can then be included in your projects, eliminating the need to link to a seperate loader library. It supports generating bindings for compatibility contexts up to GL version 3.1 and core profile contexts for versions 3.2+. The bindings are generated using XML API specifications mainained by khronos so only these XML files need to be updated to support new GL versions or extensions.
+
+Why use glbindify?
+------------------
+
+Starting with OpenGL 3.x each new OpenGL version may depricate some commands and enum values. If an application uses a so called "core profile" context then the depricated commands and enum values from the previous version will be removed from the API. By generating bindings for a specific GL version and list of extensions you can avoid accidentally developing unintended dependencies on what is exposed by the drivers on your development system. Another benefit is that the GL header and binding code will be considerably smaller. A GL header containing all OpenGL functions specified so far (including all extensions) would be greater than 18k lines long. On the other hand a header only containing only OpenGL 3.3 core functions is only 1.5k lines.
+
+There are other binding generators out there but all that I evaluated didn't suit my needs. They either didn't manage extensions, didn't offer me enough control of the generation process, had run-time performance implications, or had too many build time dependencies.
 
 Command line usage
 ------------------
@@ -20,8 +27,8 @@ Example: Generate C bindings for WGL
 
 `glbindify -l C -a wgl -v 1.0`
 
-Using the C bindings
---------------------
+Using the bindings
+------------------
 
 Call `init_<api>()` after you have created an OpenGL context, where `<api>` is one of `gl`, `wgl`, or `glx`. If all functions (not including extention functions) were found `init_<api>()` will return `true`. Note that glbindify does not mangle the binding names with macros so care must be taken to avoid including system OpenGL headers in files that also include the bindings.
 
@@ -34,50 +41,12 @@ Example:
 	...
 	glDrawArrays(...);
 
-Using the C++ bindings
-----------------------
-
-Call `gbindify::<api>::init()` after you have created an OpenGL context, where `<api>` is one of `gl`, `wgl`, or `glx`. If all functions (not including extention functions) were found `glbindify::<api>::init()` will return `true`.
-
-Example:   
-
-	#include "gl_3_3.hpp"
-	using namespace glbindify;
-	...
-	if (!gl::init())
-		exit(-1);
-
-
-The tool places typedefs such as `GLenum`, `GLint`, etc in the `glbindify` namespace and places functions and enums in the `glbindify` namespace and as well as in the API specific namespaces `glbindify::gl`, `glbindify::wgl`, and `glbindify::glx`. For brevity and clarity functions and enum's placed in API specific namespaces are not prefixed with the API name. For example a C GL API call such as:
-
-`glBindTexture(GL_TEXTURE_2D, tex)`
-
-could be made as:
-
-`glbindify::gl::BindTexture(glbindify::gl::TEXTURE_2D, tex)`
-
-or
-
-`glbindify::glBindTexture(glbindify::GL_TEXTURE_2D, tex)`
-
-By encapsuating the API's in namespaces `glbindify` avoids colliding with system headers and libraries without resorting to using macros to mangle function names as some loaders do. To use `glbindify` with existing GL code include a `using namespace glbindify` statement in your sources.
-
 Extensions
 ----------
 
-After initializing the bindings you may determine if an extension was successully loaded by checking its corresponding support flag. With the C++ bindings the support flag is placed in the `glbindify::<api>` namespace and in a boolean with the same name as the extension excluding 'GL*_*', or 'GLX*_*' prefixes. With the C bindings the extension support flag is the full name of the extension. An extension support flag will be set to true if it's name was found in the driver's extension string *and* all functions for the extension were located. Note that `glbindify` will only attempt to load extensions specified on the command line.
+After initializing the bindings you may determine if an extension was successully loaded by checking its corresponding support flag. The support flag is the full name of the extension. An extension support flag will be set to true if it's name was found in the driver's extension string *and* all functions for the extension were located. Note that `glbindify` will only attempt to load extensions specified on the command line.
 
-Example: Checking for the `GL_ARB_texture_storage` extension in C++
-
-	using namespace glbindify;
-	...
-	if (gl::ARB_texture_storage) {
-		gl::TexStorage3D(...);
-	} else {
-		...
-	}
-
-Example: Checking for the `GL_ARB_texture_storage` extension in C
+Example: Checking for the `GL_ARB_texture_storage` extension
 
 	if (GL_ARB_texture_storage) {
 		glTexStorage3D(...);
@@ -88,4 +57,4 @@ Example: Checking for the `GL_ARB_texture_storage` extension in C
 Dependencies
 ------------
 
-A C++11 compiler is required to build the command line tool and but the generated bindings do not require C++11. The command line tool and it's generated bindings are known to build in Linux, Cygwin, and MSYS2 using gcc 4.8.2 and higher. Other configurations may work but have not been tested.
+The only dependencies of glbindify are C++ compiler and a unix-like build environment. The tool and it's generated bindings are known to build with Linux, Cygwin, and MSYS2 using gcc 4.8.2 and higher. Other configurations may work but have not been tested.
