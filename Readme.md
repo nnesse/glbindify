@@ -6,9 +6,9 @@ glbindify is a command line tool that generates C bindings for OpenGL, WGL, and 
 Why use glbindify?
 ------------------
 
-Starting with OpenGL 3.x each new OpenGL version may depricate some commands and enum values. If an application uses a so called "core profile" context then the depricated commands and enum values from the previous version will be removed from the API. By generating bindings for a specific GL version and list of extensions you can avoid accidentally developing unintended dependencies on what is exposed by the drivers on your development system. Another benefit is that the GL header and binding code will be considerably smaller. A GL header containing all OpenGL functions specified so far (including all extensions) would be greater than 18k lines long. On the other hand a header only containing only OpenGL 3.3 core functions is only 1.5k lines.
+Starting with OpenGL 3.x each new OpenGL version depricates some features. If an application uses a so called "core profile" context then these depricated commands may be removed from the API. By generating bindings for a specific GL version and list of extensions you can insure at compile-time that your application only depends on that feature set. The GL header and binding code will also be considerably smaller. A GL header containing all OpenGL functions specified so far is more than 18k lines but a glbindify header containing only OpenGL 3.3 core functions is only 1.5k lines.
 
-There are other binding generators out there but all that I evaluated didn't suit my needs. They either didn't manage extensions, didn't offer me enough control of the generation process, had run-time performance implications, or had too many build time dependencies.
+I created glbindify because none of the binding generators I evaluated suited me. They either didn't manage extensions, had run-time performance implications, weren't maintained, or had undesirable build time dependencies.
 
 Command line usage
 ------------------
@@ -17,24 +17,24 @@ To generate bindings you must specify the API name, required version, and an opt
 
 Example: Generate C bindings for OpenGL 3.3 with support for `EXT_texture_filter_anisotropic` and `EXT_direct_state_access` extensions
 
-`glbindify -l C -a gl -v 3.3 -e EXT_texture_filter_anisotropic -e EXT_direct_state_access`
+`glbindify -a gl -v 3.3 -e EXT_texture_filter_anisotropic -e EXT_direct_state_access`
 
-Example: Generate C++ bindings for GLX version 1.4 with support for `ARB_create_context` and `ARB_create_context_profile` extensions
+Example: Generate C bindings for GLX version 1.4 with support for `ARB_create_context` and `ARB_create_context_profile` extensions
 
-`glbindify -l C++ -a glx -v 1.4 -e ARB_create_context -e ARB_create_context_profile`
+`glbindify -a glx -v 1.4 -e ARB_create_context -e ARB_create_context_profile`
 
 Example: Generate C bindings for WGL 
 
-`glbindify -l C -a wgl -v 1.0`
+`glbindify -a wgl -v 1.0`
 
 Using the bindings
 ------------------
 
-Call `init_<api>()` after you have created an OpenGL context, where `<api>` is one of `gl`, `wgl`, or `glx`. If all functions (not including extention functions) were found `init_<api>()` will return `true`. Note that glbindify does not mangle the binding names with macros so care must be taken to avoid including system OpenGL headers in files that also include the bindings.
+Call `init_<api>()` after you have created an OpenGL context, where `<api>` is one of `gl`, `wgl`, or `glx`. If all functions (not including extention functions) were found `init_<api>()` will return `true`. Note that since glbindify mangles the GL function names with '#define' macros you must avoid including system OpenGL headers in files that also include the bindings.
 
 Example:
 
-	#include "gl_3_3.hpp"
+	#include "gl_3_3.h"
 	...
 	if (!init_gl())
 		exit(-1);
