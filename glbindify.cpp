@@ -818,7 +818,6 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 					m_enumeration_prefix,
 					extension);
 			}
-			indent_string.pop_back();
 		}
 	}
 
