@@ -706,7 +706,6 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	indent_string.clear();
 
-	fprintf(source_file, "#include \"%s\"\n", header_name);
 	fprintf(source_file, "#ifndef _WIN32\n");
 	fprintf(source_file, "extern void (*glXGetProcAddress(const unsigned char *))(void);\n");
 	fprintf(source_file, "static inline void (*LoadProcAddress(const char *name))(void) {\n");
@@ -723,6 +722,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(source_file, "\telse return (PROC)GetProcAddress(GetModuleHandleA(\"OpenGL32.dll\"), (LPCSTR)name);\n");
 	fprintf(source_file, "}\n");
 	fprintf(source_file, "#endif\n");
+	fprintf(source_file, "#include \"%s\"\n", header_name);
 
 	fprintf(source_file, "%s\n", indent_string.c_str());
 
