@@ -68,7 +68,6 @@ struct enumeration {
 	const char *name;
 	std::map<const char *, unsigned int, cstring_compare> enum_map;
 };
-typedef std::shared_ptr<enumeration> enumeration_ptr;
 
 std::set<const char *, cstring_compare> g_common_gl_typedefs = {
 	"GLenum",
@@ -131,7 +130,6 @@ struct command {
 
 	command() : name(NULL), type(NULL) {}
 };
-typedef std::shared_ptr<command> command_ptr;
 
 class api {
 	friend class enumeration_visitor;
@@ -151,16 +149,17 @@ class api {
 
 	//List of all enums and commands
 	std::map<const char *, unsigned int, cstring_compare> m_enum_map;
-	std::vector<enumeration_ptr> m_enumerations;
-	std::map<const char *, command_ptr, cstring_compare> m_commands;
+	std::vector<enumeration *> m_enumerations;
+	std::map<const char *, command *, cstring_compare> m_commands;
 	std::map<const char *, std::string, cstring_compare> m_types;
 
 	//Types enums and commands needed
 	std::map<const char *, std::string, cstring_compare> m_target_types;
 	std::map<const char *, unsigned int, cstring_compare> m_target_enums;
-	std::map<const char *, command_ptr, cstring_compare> m_target_commands;
-	std::map<const char *, std::map<std::string, command_ptr>, cstring_compare > m_target_extension_commands;
-	std::vector<command_ptr> m_target_all_commands;
+	std::map<const char *, command *, cstring_compare> m_target_commands;
+	std::map<const char *, std::map<std::string, command *>, cstring_compare > m_target_extension_commands;
+	std::map<const char *, std::map<std::string, command *>, cstring_compare > m_target_extension_enums;
+	std::vector<command *> m_target_all_commands;
 
 	void include_type(const char *type);
 	void resolve_types();
@@ -222,7 +221,7 @@ template <class T>
 class data_builder_visitor : public XMLVisitor
 {
 protected:
-	std::shared_ptr<T> m_data;
+	T *m_data;
 private:
 	const XMLElement &m_root;
 
@@ -259,7 +258,7 @@ public:
 	{
 	}
 
-	std::shared_ptr<T> build()
+	T *build()
 	{
 		m_root.Accept(this);
 		return m_data;
@@ -289,7 +288,7 @@ class command_visitor : public data_builder_visitor<command>
 				m_data->name = command_name;
 				return true;
 			} else {
-				m_data.reset();
+				delete m_data;
 				return false;
 			}
 		} else if (parent_tag_stack_test(text, "ptype", "proto")) {
@@ -521,7 +520,7 @@ class khronos_registry_visitor : public XMLVisitor
 			return true;
 		} else if (tag_stack_test(elem, "enums", "registry")) {
 			enumeration_visitor e(elem, m_api);
-			enumeration_ptr enumeration = e.build();
+			enumeration *enumeration = e.build();
 			if (enumeration) {
 				m_api.m_enumerations.push_back(enumeration);
 			}
@@ -536,7 +535,7 @@ class khronos_registry_visitor : public XMLVisitor
 			return false;
 		} else if (tag_stack_test(elem, "command", "commands")) {
 			command_visitor c(elem, m_api);
-			command_ptr command = c.build();
+			command * command = c.build();
 			if (command) {
 				while(command->type_decl.back() == ' ')
 					command->type_decl.pop_back();
@@ -639,12 +638,12 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	//Make a combined list of all selected core and extension commands
 	for (auto val : m_target_commands) {
-		command_ptr command = val.second;
+		command * command = val.second;
 		m_target_all_commands.push_back(command);
 	}
 	for (auto iter : m_target_extension_commands) {
 		for (auto val : iter.second) {
-			command_ptr command = val.second;
+			command * command = val.second;
 			m_target_all_commands.push_back(command);
 		}
 	}
@@ -881,9 +880,6 @@ int main(int argc, char **argv)
 		switch (c) {
 		case '?':
 		case ':':
-			print_help(argv[0]);
-			exit(-1);
-			break;
 			print_help(argv[0]);
 			exit(-1);
 			break;
