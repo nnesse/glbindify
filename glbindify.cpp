@@ -33,10 +33,13 @@ THE SOFTWARE.
 #include <memory>
 #include <fstream>
 #include <stdio.h>
+#include <math.h>
 
 #include "tinyxml2.h"
 
 using namespace tinyxml2;
+
+struct api *g_api = NULL;
 
 static inline bool tag_test(const XMLNode &elem, const char *value)
 {
@@ -131,7 +134,20 @@ struct command {
 	command() : name(NULL), type(NULL) {}
 };
 
-class api {
+struct interface {
+	std::set<const char *, cstring_compare> enums;
+	std::map<const char *, command *, cstring_compare> commands;
+	std::set<const char *, cstring_compare> removed_enums;
+	std::map<const char *, command *, cstring_compare> removed_commands;
+	std::map<const char *, std::string, cstring_compare> types;
+	void append(const interface &other);
+	void include_type(const char *type);
+	void resolve_types();
+	void print_definition(FILE *header_file, std::string &indent_string);
+	void print_declaration(FILE *header_file, std::string &indent_string);
+};
+
+struct api {
 	friend class enumeration_visitor;
 	friend class feature_visitor;
 	friend class extension_visitor;
@@ -145,7 +161,7 @@ class api {
 	const char *m_enumeration_prefix;
 
 	std::set<const char *, cstring_compare> m_extensions;
-	float m_version;
+	int m_version;
 
 	//List of all enums and commands
 	std::map<const char *, unsigned int, cstring_compare> m_enum_map;
@@ -153,21 +169,9 @@ class api {
 	std::map<const char *, command *, cstring_compare> m_commands;
 	std::map<const char *, std::string, cstring_compare> m_types;
 
-	//Types enums and commands needed
-	std::map<const char *, std::string, cstring_compare> m_target_types;
-	std::map<const char *, unsigned int, cstring_compare> m_target_enums;
-	std::map<const char *, command *, cstring_compare> m_target_commands;
-	std::map<const char *, std::map<std::string, command *>, cstring_compare > m_target_extension_commands;
-	std::map<const char *, std::map<std::string, command *>, cstring_compare > m_target_extension_enums;
-	std::vector<command *> m_target_all_commands;
+	std::map<int, interface *> m_feature_interfaces;
+	std::map<const char *, interface *, cstring_compare> m_extension_interfaces;
 
-	void include_type(const char *type);
-	void resolve_types();
-
-	void types_declare(FILE *header_filE, std::string &indent_string);
-	void print_interface_declaration(FILE *header_file, std::string &indent_string, bool strip_api_prefix);
-	void print_interface_definition(FILE *header_file, std::string &indent_string, bool strpi_api_prefix);
-public:
 	bool is_command_in_namespace(const char **name) {
 		if (strstr(*name, m_command_prefix)) {
 			*name = *name + strlen(m_command_prefix);
@@ -189,15 +193,11 @@ public:
 		return m_name;
 	}
 
-	float version() {
-		return m_version;
-	}
-
 	api(const char *name,
 			int major_version, int minor_version,
 			std::set<const char *, cstring_compare> &extensions) :
 		m_name(name),
-		m_version(major_version + (minor_version * 0.1f)),
+		m_version((major_version * 10) + minor_version),
 		m_extensions(extensions)
 	{
 		if (!strcmp(m_name,"wgl")) {
@@ -369,22 +369,23 @@ public:
 	}
 };
 
-class feature_visitor :  public XMLVisitor
+class interface_visitor : public XMLVisitor
 {
 	api &m_api;
+	const XMLElement &m_root;
+	interface *m_interface;
 	bool VisitEnter(const XMLElement &elem, const XMLAttribute *attrib)
 	{
-		if (tag_stack_test(elem, "feature", "registry")) {
-			return !strcmp(m_api.m_name, elem.Attribute("api")) &&
-				(elem.FloatAttribute("number") <= m_api.version());
-		} else if (tag_stack_test(elem, "require", "feature")) {
+		if (&elem == &m_root) {
+			return true;
+		} else if (tag_test(elem, "require") && elem.Parent() == &m_root) {
 			return !elem.Attribute("profile") || !strcmp(elem.Attribute("profile"), "core");
-		} else if (tag_stack_test(elem, "remove", "feature")) {
+		} else if (tag_test(elem, "remove") && elem.Parent() == &m_root) {
 			return !elem.Attribute("profile") || !strcmp(elem.Attribute("profile"), "core");
 		} else if (tag_stack_test(elem, "enum", "require")) {
 			const char *enumeration_name = elem.Attribute("name");
 			if (m_api.is_enum_in_namespace(&enumeration_name)) {
-				m_api.m_target_enums[enumeration_name] = m_api.m_enum_map[enumeration_name];
+				m_interface->enums.insert(enumeration_name);
 				return true;
 			} else {
 				return false;
@@ -392,7 +393,7 @@ class feature_visitor :  public XMLVisitor
 		} else if (tag_stack_test(elem, "enum", "remove")) {
 			const char *enumeration_name = elem.Attribute("name");
 			if (m_api.is_enum_in_namespace(&enumeration_name)) {
-				m_api.m_target_enums.erase(enumeration_name);
+				m_interface->removed_enums.insert(enumeration_name);
 				return true;
 			} else {
 				return false;
@@ -400,7 +401,7 @@ class feature_visitor :  public XMLVisitor
 		} else if (tag_stack_test(elem, "command", "require")) {
 			const char *command_name = elem.Attribute("name");
 			if (m_api.is_command_in_namespace(&command_name)) {
-				m_api.m_target_commands[command_name] = m_api.m_commands[command_name];
+				m_interface->commands[command_name] = m_api.m_commands[command_name];
 				return true;
 			} else {
 				return false;
@@ -408,60 +409,17 @@ class feature_visitor :  public XMLVisitor
 		} else if (tag_stack_test(elem, "command", "remove")) {
 			const char *command_name = elem.Attribute("name");
 			if (m_api.is_command_in_namespace(&command_name)) {
-				m_api.m_target_commands.erase(command_name);
-			}
-			return true;
-		}
-	}
-public:
-	feature_visitor(api &api) : m_api(api) {}
-};
-
-class extension_visitor :  public XMLVisitor
-{
-	api &m_api;
-	const char *m_name;
-	bool VisitEnter(const XMLElement &elem, const XMLAttribute *attrib)
-	{
-		if (tag_stack_test(elem, "extension", "extensions")) {
-			m_name = elem.Attribute("name") + strlen(m_api.name()) + 1;
-			if (m_api.m_extensions.count(m_name)) {
-				const char *supported = elem.Attribute("supported");
-				char *supported_copy = strdup(supported);
-				char *saveptr;
-				char *token = strtok_r(supported_copy, "|", &saveptr);
-				while (token) {
-					if (!strcmp(token, m_api.name())) {
-						break;
-					}
-					token = strtok_r(NULL, "|", &saveptr);
-				}
-				return (token != NULL);
-			}
-			return false;
-		} else if (tag_stack_test(elem, "require", "extension") || tag_stack_test(elem, "remove", "extension")) {
-			return !elem.Attribute("profile") || (!strcmp(elem.Attribute("profile"),"core"));
-		} else if (tag_stack_test(elem, "enum", "require")) {
-			const char *enumeration_name = elem.Attribute("name");
-			if (m_api.is_enum_in_namespace(&enumeration_name)) {
-				m_api.m_target_enums[enumeration_name] = m_api.m_enum_map[enumeration_name];
+				m_interface->removed_commands[command_name] = m_api.m_commands[command_name];
 				return true;
 			} else {
 				return false;
 			}
-		} else if (tag_stack_test(elem, "command", "require")) {
-			const char *command_name = elem.Attribute("name");
-			if (m_api.is_command_in_namespace(&command_name)) {
-				m_api.m_target_extension_commands[m_name][command_name] = m_api.m_commands[command_name];
-				return true;
-			} else {
-				return false;
-			}
-			return true;
 		}
+		return false;
 	}
 public:
-	extension_visitor(api &api) : m_api(api) {}
+	interface_visitor(api &api, const XMLElement &root, interface *interface) :
+		m_api(api), m_root(root), m_interface(interface) {}
 };
 
 class type_visitor :  public XMLVisitor
@@ -526,12 +484,30 @@ class khronos_registry_visitor : public XMLVisitor
 			}
 			return false;
 		} else if (tag_stack_test(elem, "feature", "registry")) {
-			feature_visitor f(m_api);
-			elem.Accept(&f);
+			interface *feature = new interface();
+			float version = elem.FloatAttribute("number");
+			m_api.m_feature_interfaces[(int)roundf(version*10)] = feature;
+			interface_visitor i_visitor(m_api, elem, feature);
+			elem.Accept(&i_visitor);
 			return false;
 		} else if (tag_stack_test(elem, "extension", "extensions")) {
-			extension_visitor e(m_api);
-			elem.Accept(&e);
+			const char *supported = elem.Attribute("supported");
+			char *supported_copy = strdup(supported);
+			char *saveptr;
+			char *token = strtok_r(supported_copy, "|", &saveptr);
+			const char *name = elem.Attribute("name") + strlen(m_api.name()) + 1;
+			while (token) {
+				if (!strcmp(token, m_api.name())) {
+					break;
+				}
+				token = strtok_r(NULL, "|", &saveptr);
+			}
+			if (token != NULL) {
+				interface *feature = new interface();
+				m_api.m_extension_interfaces[name] = feature;
+				interface_visitor i_visitor(m_api, elem, feature);
+				elem.Accept(&i_visitor);
+			}
 			return false;
 		} else if (tag_stack_test(elem, "command", "commands")) {
 			command_visitor c(elem, m_api);
@@ -554,80 +530,65 @@ public:
 	khronos_registry_visitor(XMLDocument &doc, api &api) : m_doc(doc), m_api(api) { }
 };
 
-void api::types_declare(FILE *header_file, std::string &indent_string)
+void interface::print_declaration(FILE *header_file, std::string &indent_string)
 {
-	for (auto val : m_target_types) {
+	const char *enumeration_prefix = g_api->m_enumeration_prefix;
+
+	for (auto val : types) {
 		fprintf(header_file, "%s%s\n", indent_string.c_str(), val.second.c_str());
 	}
-}
-
-void api::print_interface_declaration(FILE *header_file, std::string &indent_string, bool strip_api_prefix)
-{
-	const char *enumeration_prefix = strip_api_prefix ? "" : m_enumeration_prefix;
 
 	fprintf(header_file, "%s\n", indent_string.c_str());
-	fprintf(header_file, "%senum {\n", indent_string.c_str());
-
-	indent_string.push_back('\t');
-	for (auto val : m_target_enums) {
-		if (strip_api_prefix) {
-			fprintf(header_file, "#pragma push_macro(\"%s\")\n", val.first);
-			fprintf(header_file, "#undef %s\n", val.first);
-			fprintf(header_file, "%s%s%s = 0x%x,\n", indent_string.c_str(), enumeration_prefix, val.first, val.second);
-			fprintf(header_file, "#pragma pop_macro(\"%s\")\n", val.first);
-		} else {
-			fprintf(header_file, "%s%s%s = 0x%x,\n", indent_string.c_str(), enumeration_prefix, val.first, val.second);
-		}
+	for (auto val : enums) {
+		fprintf(header_file, "#define %s%s 0x%x\n",
+				enumeration_prefix, val,
+				g_api->m_enum_map[val]);
 	}
-	indent_string.pop_back();
-	fprintf(header_file, "%s};\n", indent_string.c_str());
-
 	fprintf(header_file, "%s\n", indent_string.c_str());
-	for (auto command : m_target_all_commands) {
+	for (auto iter: commands) {
+		auto command = iter.second;
 		fprintf(header_file, "#define %s%s %s%s\n",
-				m_command_prefix, command->name,
-				m_mangle_prefix, command->name);
+				g_api->m_command_prefix, command->name,
+				g_api->m_mangle_prefix, command->name);
 		command->print_declare(header_file,
-				strip_api_prefix ? "" : m_command_prefix,
+				g_api->m_command_prefix,
 				indent_string);
 	}
-
-	fprintf(header_file, "%s\n", indent_string.c_str());
-	const char *extension_prefix = strip_api_prefix ? "" : m_enumeration_prefix;
-	for (auto extension : m_extensions)
-		fprintf(header_file, "%sextern bool %s%s;\n", indent_string.c_str(), extension_prefix, extension);
 }
 
-void api::print_interface_definition(FILE *source_file, std::string &indent_string, bool strip_api_prefix)
+void interface::print_definition(FILE *source_file, std::string &indent_string)
 {
-	const char *command_prefix = strip_api_prefix ? "" : m_command_prefix;
-
 	fprintf(source_file, "%s\n", indent_string.c_str());
-	for (auto command : m_target_all_commands)
-		command->print_initialize(source_file, command_prefix, indent_string);
-
-	fprintf(source_file, "%s\n", indent_string.c_str());
-	for (auto extension : m_extensions)
-		fprintf(source_file, "%sbool %s%s = false;\n", indent_string.c_str(),
-				strip_api_prefix ? "" : m_enumeration_prefix,
-				extension);
+	for (auto iter : commands)
+		iter.second->print_initialize(source_file, g_api->m_command_prefix, indent_string);
 }
 
-void api::include_type(const char *type)
+void interface::include_type(const char *type)
 {
-	if (type != NULL && !g_common_gl_typedefs.count(type) && !m_target_types.count(type)) {
-		m_target_types[type] = m_types[type];
+	if (type != NULL && !g_common_gl_typedefs.count(type) && !types.count(type)) {
+		types[type] = g_api->m_types[type];
 	}
 }
 
-void api::resolve_types()
+void interface::resolve_types()
 {
-	for (auto command: m_target_all_commands) {
+	for (auto iter: commands) {
+		auto command = iter.second;
 		include_type(command->type);
 		for (auto param : command->params) {
 			include_type(param.type);
 		}
 	}
+}
+
+void interface::append(const interface &other)
+{
+	enums.insert(other.enums.begin(), other.enums.end());
+	for (auto e : other.removed_enums)
+		enums.erase(e);
+	commands.insert(other.commands.begin(), other.commands.end());
+	for (auto iter : other.removed_commands)
+		commands.erase(iter.first);
 }
 
 void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file , FILE *source_file)
@@ -636,19 +597,23 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	doc.Accept(&registry_visitor);
 	std::string indent_string;
 
-	//Make a combined list of all selected core and extension commands
-	for (auto val : m_target_commands) {
-		command * command = val.second;
-		m_target_all_commands.push_back(command);
+	interface full_interface;
+	interface base_interface;
+
+	for (auto iter : m_feature_interfaces) {
+		if (iter.first > m_version)
+			break;
+		base_interface.append(*(iter.second));
 	}
-	for (auto iter : m_target_extension_commands) {
-		for (auto val : iter.second) {
-			command * command = val.second;
-			m_target_all_commands.push_back(command);
+	full_interface.append(base_interface);
+	for (auto ext : m_extensions) {
+		auto iter = m_extension_interfaces.find(ext);
+		if (iter != m_extension_interfaces.end()) {
+			full_interface.append(*(iter->second));
 		}
 	}
 
-	resolve_types();
+	full_interface.resolve_types();
 
 	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", m_name);
 	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", m_name);
@@ -689,9 +654,11 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(header_file, "%stypedef ptrdiff_t GLsizeiptr;\n", indent_string.c_str());
 	fprintf(header_file, "#endif\n");
 
-	types_declare(header_file, indent_string);
+	full_interface.print_declaration(header_file, indent_string);
 
-	print_interface_declaration(header_file, indent_string, false);
+	fprintf(header_file, "%s\n", indent_string.c_str());
+	for (auto extension : m_extensions)
+		fprintf(header_file, "%sextern bool %s%s;\n", indent_string.c_str(), m_enumeration_prefix, extension);
 
 	fprintf(header_file, "%s\n", indent_string.c_str());
 	fprintf(header_file, "%sbool init_%s();\n", indent_string.c_str(), m_name);
@@ -725,14 +692,21 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 
 	fprintf(source_file, "%s\n", indent_string.c_str());
 
-	print_interface_definition(source_file, indent_string, false);
+	full_interface.print_definition(source_file, indent_string);
 
+	fprintf(source_file, "%s\n", indent_string.c_str());
+	for (auto extension : m_extensions)
+		fprintf(source_file, "%sbool %s%s = false;\n", indent_string.c_str(),
+				m_enumeration_prefix,
+				extension);
+
+	fprintf(source_file, "%s\n", indent_string.c_str());
 	fprintf(source_file, "%sbool init_%s()\n", indent_string.c_str(), m_name);
 	fprintf(source_file, "%s{\n", indent_string.c_str());
 	indent_string.push_back('\t');
 
-	for (auto command : m_target_all_commands) {
-		command->print_load(source_file, m_command_prefix, false, indent_string);
+	for (auto iter : full_interface.commands) {
+		(iter.second)->print_load(source_file, m_command_prefix, false, indent_string);
 	}
 
 	//
@@ -766,13 +740,19 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 			// which functions in this extension are in core or compatibility we will just rely on the extension string to determine
 			// support for it
 			//
-			if (strcmp(extension, "EXT_direct_state_access") && m_target_extension_commands[extension].size()) {
+
+			auto iter = m_extension_interfaces.find(extension);
+			if (iter == m_extension_interfaces.end())
+				continue;
+
+			interface *ext_interface = iter->second;
+			if (strcmp(extension, "EXT_direct_state_access") && ext_interface->commands.size()) {
 				int i = 0;
 				fprintf(source_file, "%sGL_%s = ",
 					indent_string.c_str(),
 					extension);
 				indent_string.push_back('\t');
-				for (auto iter : m_target_extension_commands[extension]) {
+				for (auto iter : ext_interface->commands) {
 					if ((i % 4) == 3) {
 						fprintf(source_file, "\n%s", indent_string.c_str());
 					}
@@ -780,7 +760,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 						fprintf(source_file, " && ");
 					fprintf(source_file, "%s%s",
 						m_command_prefix,
-						iter.first.c_str());
+						iter.first);
 					i++;
 				}
 				fprintf(source_file, ";\n"); // for (int i = 0; i < extension_count...
@@ -790,7 +770,11 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	} else {
 		int i = 0;
 		for (auto extension : m_extensions) {
-			if (m_target_extension_commands[extension].size()) {
+			auto iter = m_extension_interfaces.find(extension);
+			if (iter == m_extension_interfaces.end())
+				continue;
+			interface *ext_interface = iter->second;
+			if (ext_interface->commands.size()) {
 				fprintf(source_file, "%s%s%s = %s%s && ",
 					indent_string.c_str(),
 					m_enumeration_prefix,
@@ -799,7 +783,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 					extension);
 				indent_string.push_back('\t');
 				int i = 0;
-				for (auto iter : m_target_extension_commands[extension]) {
+				for (auto iter : ext_interface->commands) {
 					if ((i % 4) == 3) {
 						fprintf(source_file, "\n%s", indent_string.c_str());
 					}
@@ -807,7 +791,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 						fprintf(source_file, " && ");
 					fprintf(source_file, "%s%s",
 						m_command_prefix,
-						iter.first.c_str());
+						iter.first);
 					i++;
 				}
 				fprintf(source_file, ";\n");
@@ -825,7 +809,7 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	indent_string.push_back('\t');
 
 	int i = 0;
-	for (auto iter : m_target_commands) {
+	for (auto iter : base_interface.commands) {
 		if ((i % 4) == 3) {
 			fprintf(source_file, "\n%s", indent_string.c_str());
 		}
@@ -907,6 +891,8 @@ int main(int argc, char **argv)
 
 	printf("Generating bindings for %s version %d.%d\n", api_name, api_major_version, api_minor_version);
 	api api(api_name, api_major_version, api_minor_version, extensions);
+
+	g_api = &api;
 
 	char in_filename[200];
 	snprintf(in_filename, sizeof(in_filename),PKGDATADIR "/%s.xml", api.name());
