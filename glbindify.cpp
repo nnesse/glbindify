@@ -40,6 +40,30 @@ THE SOFTWARE.
 using namespace tinyxml2;
 
 struct api *g_api = NULL;
+std::string g_indent_string;
+
+void increase_indent()
+{
+	g_indent_string.push_back('\t');
+}
+
+void decrease_indent()
+{
+	g_indent_string.push_back('\t');
+}
+
+void reset_indent()
+{
+	g_indent_string.clear();
+}
+
+int indent_fprintf(FILE *file, const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	fputs(g_indent_string.c_str(), file);
+	return vfprintf(file, format, args);
+}
 
 static inline bool tag_test(const XMLNode &elem, const char *value)
 {
@@ -99,8 +123,8 @@ struct command {
 		std::string decl;
 	};
 	std::vector<param> params;
-	void print_declare(FILE *out, const char *command_prefix, std::string &indent_string) {
-		fprintf(out, "%sextern %s (*%s%s)(", indent_string.c_str(), type_decl.c_str(), command_prefix, name);
+	void print_declare(FILE *out, const char *command_prefix) {
+		indent_fprintf(out, "extern %s (*%s%s)(", type_decl.c_str(), command_prefix, name);
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(int i = 1; i < params.size(); i++) {
@@ -109,8 +133,8 @@ struct command {
 		}
 		fprintf(out, ");\n");
 	}
-	void print_initialize(FILE *out, const char *command_prefix, std::string &indent_string) {
-		fprintf(out, "%s%s (*%s%s)(", indent_string.c_str(), type_decl.c_str(), command_prefix, name);
+	void print_initialize(FILE *out, const char *command_prefix) {
+		indent_fprintf(out, "%s (*%s%s)(", type_decl.c_str(), command_prefix, name);
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(int i = 1; i < params.size(); i++) {
@@ -120,8 +144,8 @@ struct command {
 		fprintf(out, ") = NULL;\n");
 	}
 
-	void print_load(FILE *out, const char *command_prefix, bool strip_api_prefix, std::string &indent_string) {
-		fprintf(out, "%s%s%s = (%s (*)(", indent_string.c_str(), (strip_api_prefix ? "" : command_prefix), name, type_decl.c_str());
+	void print_load(FILE *out, const char *command_prefix, bool strip_api_prefix) {
+		indent_fprintf(out, "%s%s = (%s (*)(", (strip_api_prefix ? "" : command_prefix), name, type_decl.c_str());
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(int i = 1; i < params.size(); i++) {
@@ -143,8 +167,8 @@ struct interface {
 	void append(const interface &other);
 	void include_type(const char *type);
 	void resolve_types();
-	void print_definition(FILE *header_file, std::string &indent_string);
-	void print_declaration(FILE *header_file, std::string &indent_string);
+	void print_definition(FILE *header_file);
+	void print_declaration(FILE *header_file);
 };
 
 struct api {
@@ -530,37 +554,35 @@ public:
 	khronos_registry_visitor(XMLDocument &doc, api &api) : m_doc(doc), m_api(api) { }
 };
 
-void interface::print_declaration(FILE *header_file, std::string &indent_string)
+void interface::print_declaration(FILE *header_file)
 {
 	const char *enumeration_prefix = g_api->m_enumeration_prefix;
 
 	for (auto val : types) {
-		fprintf(header_file, "%s%s\n", indent_string.c_str(), val.second.c_str());
+		indent_fprintf(header_file, "%s\n", val.second.c_str());
 	}
 
-	fprintf(header_file, "%s\n", indent_string.c_str());
+	indent_fprintf(header_file, "\n");
 	for (auto val : enums) {
 		fprintf(header_file, "#define %s%s 0x%x\n",
 				enumeration_prefix, val,
 				g_api->m_enum_map[val]);
 	}
-	fprintf(header_file, "%s\n", indent_string.c_str());
+	indent_fprintf(header_file, "\n");
 	for (auto iter: commands) {
 		auto command = iter.second;
 		fprintf(header_file, "#define %s%s %s%s\n",
 				g_api->m_command_prefix, command->name,
 				g_api->m_mangle_prefix, command->name);
-		command->print_declare(header_file,
-				g_api->m_command_prefix,
-				indent_string);
+		command->print_declare(header_file, g_api->m_command_prefix);
 	}
 }
 
-void interface::print_definition(FILE *source_file, std::string &indent_string)
+void interface::print_definition(FILE *source_file)
 {
-	fprintf(source_file, "%s\n", indent_string.c_str());
+	indent_fprintf(source_file, "\n");
 	for (auto iter : commands)
-		iter.second->print_initialize(source_file, g_api->m_command_prefix, indent_string);
+		iter.second->print_initialize(source_file, g_api->m_command_prefix);
 }
 
 void interface::include_type(const char *type)
@@ -595,8 +617,6 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 {
 	khronos_registry_visitor registry_visitor(doc, *this);
 	doc.Accept(&registry_visitor);
-	std::string indent_string;
-
 	interface full_interface;
 	interface base_interface;
 
@@ -636,41 +656,41 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	//
 	//We need to include these typedefs even for glx and wgl since they are referenced there without being defined
 	//
-	fprintf(header_file, "#ifndef GLBINDIFY_COMMON_GL_TYPEDEFS\n");
-	fprintf(header_file, "#define GLBINDIFY_COMMON_GL_TYPEDEFS\n");
-	fprintf(header_file, "%stypedef unsigned int GLenum;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef unsigned char GLboolean;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef unsigned int GLbitfield;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef signed char GLbyte;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef short GLshort;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef int GLint;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef unsigned char GLubyte;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef unsigned short GLushort;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef unsigned int GLuint;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef int GLsizei;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef float GLfloat;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef double GLdouble;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef ptrdiff_t GLintptr;\n", indent_string.c_str());
-	fprintf(header_file, "%stypedef ptrdiff_t GLsizeiptr;\n", indent_string.c_str());
+	indent_fprintf(header_file, "#ifndef GLBINDIFY_COMMON_GL_TYPEDEFS\n");
+	indent_fprintf(header_file, "#define GLBINDIFY_COMMON_GL_TYPEDEFS\n");
+	indent_fprintf(header_file, "typedef unsigned int GLenum;\n");
+	indent_fprintf(header_file, "typedef unsigned char GLboolean;\n");
+	indent_fprintf(header_file, "typedef unsigned int GLbitfield;\n");
+	indent_fprintf(header_file, "typedef signed char GLbyte;\n");
+	indent_fprintf(header_file, "typedef short GLshort;\n");
+	indent_fprintf(header_file, "typedef int GLint;\n");
+	indent_fprintf(header_file, "typedef unsigned char GLubyte;\n");
+	indent_fprintf(header_file, "typedef unsigned short GLushort;\n");
+	indent_fprintf(header_file, "typedef unsigned int GLuint;\n");
+	indent_fprintf(header_file, "typedef int GLsizei;\n");
+	indent_fprintf(header_file, "typedef float GLfloat;\n");
+	indent_fprintf(header_file, "typedef double GLdouble;\n");
+	indent_fprintf(header_file, "typedef ptrdiff_t GLintptr;\n");
+	indent_fprintf(header_file, "typedef ptrdiff_t GLsizeiptr;\n");
 	fprintf(header_file, "#endif\n");
 
-	full_interface.print_declaration(header_file, indent_string);
+	full_interface.print_declaration(header_file);
 
-	fprintf(header_file, "%s\n", indent_string.c_str());
+	indent_fprintf(header_file, "\n");
 	for (auto extension : m_extensions)
-		fprintf(header_file, "%sextern bool %s%s;\n", indent_string.c_str(), m_enumeration_prefix, extension);
+		indent_fprintf(header_file, "extern bool %s%s;\n", m_enumeration_prefix, extension);
 
-	fprintf(header_file, "%s\n", indent_string.c_str());
-	fprintf(header_file, "%sbool init_%s();\n", indent_string.c_str(), m_name);
+	indent_fprintf(header_file, "\n");
+	indent_fprintf(header_file, "bool init_%s();\n", m_name);
 
-	fprintf(header_file, "%s\n", indent_string.c_str());
+	indent_fprintf(header_file, "\n");
 	fprintf(header_file, "#ifdef __cplusplus\n");
 	fprintf(header_file, "}\n"); //extern "C" {
 	fprintf(header_file, "#endif\n");
 
 	fprintf(header_file, "#endif\n");
 
-	indent_string.clear();
+	reset_indent();
 
 	fprintf(source_file, "#ifndef _WIN32\n");
 	fprintf(source_file, "extern void (*glXGetProcAddress(const unsigned char *))(void);\n");
@@ -690,48 +710,47 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(source_file, "#endif\n");
 	fprintf(source_file, "#include \"%s\"\n", header_name);
 
-	fprintf(source_file, "%s\n", indent_string.c_str());
+	indent_fprintf(source_file, "\n");
 
-	full_interface.print_definition(source_file, indent_string);
+	full_interface.print_definition(source_file);
 
-	fprintf(source_file, "%s\n", indent_string.c_str());
+	indent_fprintf(source_file, "\n");
 	for (auto extension : m_extensions)
-		fprintf(source_file, "%sbool %s%s = false;\n", indent_string.c_str(),
+		indent_fprintf(source_file, "bool %s%s = false;\n",
 				m_enumeration_prefix,
 				extension);
 
-	fprintf(source_file, "%s\n", indent_string.c_str());
-	fprintf(source_file, "%sbool init_%s()\n", indent_string.c_str(), m_name);
-	fprintf(source_file, "%s{\n", indent_string.c_str());
-	indent_string.push_back('\t');
+	indent_fprintf(source_file, "\n");
+	indent_fprintf(source_file, "bool init_%s()\n", m_name);
+	indent_fprintf(source_file, "{\n");
+	increase_indent();
 
 	for (auto iter : full_interface.commands) {
-		(iter.second)->print_load(source_file, m_command_prefix, false, indent_string);
+		(iter.second)->print_load(source_file, m_command_prefix, false);
 	}
 
 	//
 	// Identify supported gl extensions
 	//
-	if (!strcmp(m_name,"gl")) {
-		fprintf(source_file, "%s\n", indent_string.c_str());
-		fprintf(source_file, "%sGLint extension_count;\n", indent_string.c_str());
-		fprintf(source_file, "%sglGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);\n", indent_string.c_str());
-		fprintf(source_file, "%sint i;\n", indent_string.c_str());
-		fprintf(source_file, "%sfor (i = 0; i < extension_count; i++) {\n", indent_string.c_str());
-		indent_string.push_back('\t');
+	if (!strcmp(m_name,"gl") && m_extensions.size()) {
+		indent_fprintf(source_file, "\n");
+		indent_fprintf(source_file, "GLint extension_count;\n");
+		indent_fprintf(source_file, "glGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);\n");
+		indent_fprintf(source_file, "int i;\n");
+		indent_fprintf(source_file, "for (i = 0; i < extension_count; i++) {\n");
+		increase_indent();
 
 		for (auto extension : m_extensions) {
-			fprintf(source_file, "%sif (!strcmp(\"%s\",(const char *)(glGetStringi(GL_EXTENSIONS, i) + 3)))\n",
-				indent_string.c_str(), extension);
-			fprintf(source_file, "%s\tGL_%s = true;\n",
-				indent_string.c_str(),
+			indent_fprintf(source_file, "if (!strcmp(\"%s\",(const char *)(glGetStringi(GL_EXTENSIONS, i) + 3)))\n",
+				extension);
+			indent_fprintf(source_file, "\tGL_%s = true;\n",
 				extension);
 		}
-		indent_string.pop_back();
-		fprintf(source_file, "%s}\n", indent_string.c_str()); // for (int i = 0; i < extension_count...
+		decrease_indent();
+		indent_fprintf(source_file, "}\n"); // for (int i = 0; i < extension_count...
 
 		if (m_extensions.size())
-			fprintf(source_file, "%s\n", indent_string.c_str());
+			indent_fprintf(source_file, "\n");
 		for (auto extension : m_extensions) {
 			//
 			// Check if the extension's functions have been found.
@@ -748,26 +767,23 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 			interface *ext_interface = iter->second;
 			if (strcmp(extension, "EXT_direct_state_access") && ext_interface->commands.size()) {
 				int i = 0;
-				fprintf(source_file, "%sGL_%s = ",
-					indent_string.c_str(),
-					extension);
-				indent_string.push_back('\t');
+				fprintf(source_file, "GL_%s = ", extension);
+				increase_indent();
 				for (auto iter : ext_interface->commands) {
 					if ((i % 4) == 3) {
-						fprintf(source_file, "\n%s", indent_string.c_str());
+						fprintf(source_file, "\n");
+						indent_fprintf(source_file, "");
 					}
 					if (i)
 						fprintf(source_file, " && ");
-					fprintf(source_file, "%s%s",
-						m_command_prefix,
-						iter.first);
+					fprintf(source_file, "%s%s", m_command_prefix, iter.first);
 					i++;
 				}
 				fprintf(source_file, ";\n"); // for (int i = 0; i < extension_count...
-				indent_string.pop_back();
+				decrease_indent();
 			}
 		}
-	} else {
+	} else if (m_extensions.size()) {
 		int i = 0;
 		for (auto extension : m_extensions) {
 			auto iter = m_extension_interfaces.find(extension);
@@ -775,43 +791,40 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 				continue;
 			interface *ext_interface = iter->second;
 			if (ext_interface->commands.size()) {
-				fprintf(source_file, "%s%s%s = %s%s && ",
-					indent_string.c_str(),
+				indent_fprintf(source_file, "%s%s = %s%s && ",
 					m_enumeration_prefix,
 					extension,
 					m_enumeration_prefix,
 					extension);
-				indent_string.push_back('\t');
+				increase_indent();
 				int i = 0;
 				for (auto iter : ext_interface->commands) {
 					if ((i % 4) == 3) {
-						fprintf(source_file, "\n%s", indent_string.c_str());
+						fprintf(source_file, "\n");
+						indent_fprintf(source_file, "");
 					}
 					if (i)
 						fprintf(source_file, " && ");
-					fprintf(source_file, "%s%s",
-						m_command_prefix,
-						iter.first);
+					fprintf(source_file, "%s%s", m_command_prefix, iter.first);
 					i++;
 				}
 				fprintf(source_file, ";\n");
+				decrease_indent();
 			} else {
-				fprintf(source_file, "%s%s%s = true;",
-					indent_string.c_str(),
-					m_enumeration_prefix,
-					extension);
+				fprintf(source_file, "%s%s = true;", m_enumeration_prefix, extension);
 			}
 		}
 	}
 
-	fprintf(source_file, "%s\n", indent_string.c_str());
-	fprintf(source_file, "%sreturn ", indent_string.c_str());
-	indent_string.push_back('\t');
+	fprintf(source_file, "\n");
+	indent_fprintf(source_file, "return ");
+	increase_indent();
 
 	int i = 0;
 	for (auto iter : base_interface.commands) {
 		if ((i % 4) == 3) {
-			fprintf(source_file, "\n%s", indent_string.c_str());
+			fprintf(source_file, "\n");
+			indent_fprintf(source_file, "");
 		}
 		if (i)
 			fprintf(source_file, " && ");
@@ -820,10 +833,10 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	}
 
 	fprintf(source_file, ";\n");
-	indent_string.pop_back(); //return true ...
+	decrease_indent(); //return true
 
-	indent_string.pop_back();
-	fprintf(source_file, "%s}\n", indent_string.c_str()); //init()
+	decrease_indent(); //bool init_...()
+	indent_fprintf(source_file, "}\n"); //init()
 }
 
 static void print_help(const char *program_name)
