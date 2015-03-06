@@ -49,7 +49,7 @@ void increase_indent()
 
 void decrease_indent()
 {
-	g_indent_string.push_back('\t');
+	g_indent_string.pop_back();
 }
 
 void reset_indent()
@@ -185,7 +185,6 @@ struct api {
 	const char *m_enumeration_prefix;
 
 	std::set<const char *, cstring_compare> m_extensions;
-	int m_version;
 
 	//List of all enums and commands
 	std::map<const char *, unsigned int, cstring_compare> m_enum_map;
@@ -218,10 +217,8 @@ struct api {
 	}
 
 	api(const char *name,
-			int major_version, int minor_version,
 			std::set<const char *, cstring_compare> &extensions) :
 		m_name(name),
-		m_version((major_version * 10) + minor_version),
 		m_extensions(extensions)
 	{
 		if (!strcmp(m_name,"wgl")) {
@@ -238,7 +235,7 @@ struct api {
 			m_enumeration_prefix = "GL_";
 		}
 	}
-	void bindify(XMLDocument &doc, const char *header_name, FILE *header_file, FILE *source_file);
+	void bindify(const char *header_name, int min_version, FILE *header_file, FILE *source_file);
 };
 
 template <class T>
@@ -559,17 +556,28 @@ void interface::print_declaration(FILE *header_file)
 	const char *enumeration_prefix = g_api->m_enumeration_prefix;
 
 	for (auto val : types) {
+		indent_fprintf(header_file, "#ifndef GLB_type_%s\n", val.first);
+		indent_fprintf(header_file, "#define GLB_type_%s\n", val.first);
 		indent_fprintf(header_file, "%s\n", val.second.c_str());
+		indent_fprintf(header_file, "#endif\n", enumeration_prefix, val.first);
 	}
 
 	indent_fprintf(header_file, "\n");
+	for (auto val : removed_enums) {
+		fprintf(header_file, "#undef %s%s\n", enumeration_prefix, val);
+	}
 	for (auto val : enums) {
 		fprintf(header_file, "#define %s%s 0x%x\n",
 				enumeration_prefix, val,
 				g_api->m_enum_map[val]);
 	}
 	indent_fprintf(header_file, "\n");
-	for (auto iter: commands) {
+	for (auto iter : removed_commands) {
+		auto command = iter.second;
+		fprintf(header_file, "#undef %s%s\n",
+				g_api->m_command_prefix, command->name);
+	}
+	for (auto iter : commands) {
 		auto command = iter.second;
 		fprintf(header_file, "#define %s%s %s%s\n",
 				g_api->m_command_prefix, command->name,
@@ -613,27 +621,20 @@ void interface::append(const interface &other)
 		commands.erase(iter.first);
 }
 
-void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file , FILE *source_file)
+void api::bindify(const char *header_name, int min_version, FILE *header_file , FILE *source_file)
 {
-	khronos_registry_visitor registry_visitor(doc, *this);
-	doc.Accept(&registry_visitor);
 	interface full_interface;
-	interface base_interface;
-
+	interface core_3_2;
+	int max_version = min_version;
 	for (auto iter : m_feature_interfaces) {
-		if (iter.first > m_version)
-			break;
-		base_interface.append(*(iter.second));
+		if (iter.first > min_version)
+			iter.second->resolve_types();
+		else
+			core_3_2.append(*(iter.second));
+		max_version = iter.first > max_version ? iter.first : max_version;
+		full_interface.append(*(iter.second));
 	}
-	full_interface.append(base_interface);
-	for (auto ext : m_extensions) {
-		auto iter = m_extension_interfaces.find(ext);
-		if (iter != m_extension_interfaces.end()) {
-			full_interface.append(*(iter->second));
-		}
-	}
-
-	full_interface.resolve_types();
+	core_3_2.resolve_types();
 
 	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", m_name);
 	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", m_name);
@@ -672,16 +673,24 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	indent_fprintf(header_file, "typedef double GLdouble;\n");
 	indent_fprintf(header_file, "typedef ptrdiff_t GLintptr;\n");
 	indent_fprintf(header_file, "typedef ptrdiff_t GLsizeiptr;\n");
-	fprintf(header_file, "#endif\n");
+	indent_fprintf(header_file, "#endif\n");
 
-	full_interface.print_declaration(header_file);
+	core_3_2.print_declaration(header_file);
+	for (auto iter : m_feature_interfaces) {
+		if (iter.first > min_version) {
+			indent_fprintf(header_file, "\n");
+			indent_fprintf(header_file, "#if defined(GLB_%sVERSION) && GLB_%sVERSION >= %d\n",
+					m_enumeration_prefix,
+					m_enumeration_prefix,
+					iter.first);
+			indent_fprintf(header_file, "\n");
+			iter.second->print_declaration(header_file);
+			indent_fprintf(header_file, "#endif\n");
+		}
+	}
 
 	indent_fprintf(header_file, "\n");
-	for (auto extension : m_extensions)
-		indent_fprintf(header_file, "extern bool %s%s;\n", m_enumeration_prefix, extension);
-
-	indent_fprintf(header_file, "\n");
-	indent_fprintf(header_file, "bool init_%s();\n", m_name);
+	indent_fprintf(header_file, "bool init_%s(int maj, int min);\n", m_name);
 
 	indent_fprintf(header_file, "\n");
 	fprintf(header_file, "#ifdef __cplusplus\n");
@@ -708,120 +717,29 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 	fprintf(source_file, "\telse return (PROC)GetProcAddress(GetModuleHandleA(\"OpenGL32.dll\"), (LPCSTR)name);\n");
 	fprintf(source_file, "}\n");
 	fprintf(source_file, "#endif\n");
+	fprintf(source_file, "#define GLB_%sVERSION %d\n", m_enumeration_prefix, max_version);
 	fprintf(source_file, "#include \"%s\"\n", header_name);
 
 	indent_fprintf(source_file, "\n");
-
 	full_interface.print_definition(source_file);
 
 	indent_fprintf(source_file, "\n");
-	for (auto extension : m_extensions)
-		indent_fprintf(source_file, "bool %s%s = false;\n",
-				m_enumeration_prefix,
-				extension);
-
-	indent_fprintf(source_file, "\n");
-	indent_fprintf(source_file, "bool init_%s()\n", m_name);
+	indent_fprintf(source_file, "bool init_%s(int maj, int min)\n", m_name);
 	indent_fprintf(source_file, "{\n");
 	increase_indent();
+	indent_fprintf(source_file, "int version = maj * 10 + min;\n");
+	indent_fprintf(source_file, "bool ret = true;\n");
+	indent_fprintf(source_file, "if (version < %d) return false;\n", min_version);
 
-	for (auto iter : full_interface.commands) {
+
+	for (auto iter : full_interface.commands)
 		(iter.second)->print_load(source_file, m_command_prefix, false);
-	}
 
-	//
-	// Identify supported gl extensions
-	//
-	if (!strcmp(m_name,"gl") && m_extensions.size()) {
-		indent_fprintf(source_file, "\n");
-		indent_fprintf(source_file, "GLint extension_count;\n");
-		indent_fprintf(source_file, "glGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);\n");
-		indent_fprintf(source_file, "int i;\n");
-		indent_fprintf(source_file, "for (i = 0; i < extension_count; i++) {\n");
-		increase_indent();
-
-		for (auto extension : m_extensions) {
-			indent_fprintf(source_file, "if (!strcmp(\"%s\",(const char *)(glGetStringi(GL_EXTENSIONS, i) + 3)))\n",
-				extension);
-			indent_fprintf(source_file, "\tGL_%s = true;\n",
-				extension);
-		}
-		decrease_indent();
-		indent_fprintf(source_file, "}\n"); // for (int i = 0; i < extension_count...
-
-		if (m_extensions.size())
-			indent_fprintf(source_file, "\n");
-		for (auto extension : m_extensions) {
-			//
-			// Check if the extension's functions have been found.
-			//
-			// Note: EXT_direct_state_access extends compatibility profile functions since there is no easy way to determine
-			// which functions in this extension are in core or compatibility we will just rely on the extension string to determine
-			// support for it
-			//
-
-			auto iter = m_extension_interfaces.find(extension);
-			if (iter == m_extension_interfaces.end())
-				continue;
-
-			interface *ext_interface = iter->second;
-			if (strcmp(extension, "EXT_direct_state_access") && ext_interface->commands.size()) {
-				int i = 0;
-				fprintf(source_file, "GL_%s = ", extension);
-				increase_indent();
-				for (auto iter : ext_interface->commands) {
-					if ((i % 4) == 3) {
-						fprintf(source_file, "\n");
-						indent_fprintf(source_file, "");
-					}
-					if (i)
-						fprintf(source_file, " && ");
-					fprintf(source_file, "%s%s", m_command_prefix, iter.first);
-					i++;
-				}
-				fprintf(source_file, ";\n"); // for (int i = 0; i < extension_count...
-				decrease_indent();
-			}
-		}
-	} else if (m_extensions.size()) {
-		int i = 0;
-		for (auto extension : m_extensions) {
-			auto iter = m_extension_interfaces.find(extension);
-			if (iter == m_extension_interfaces.end())
-				continue;
-			interface *ext_interface = iter->second;
-			if (ext_interface->commands.size()) {
-				indent_fprintf(source_file, "%s%s = %s%s && ",
-					m_enumeration_prefix,
-					extension,
-					m_enumeration_prefix,
-					extension);
-				increase_indent();
-				int i = 0;
-				for (auto iter : ext_interface->commands) {
-					if ((i % 4) == 3) {
-						fprintf(source_file, "\n");
-						indent_fprintf(source_file, "");
-					}
-					if (i)
-						fprintf(source_file, " && ");
-					fprintf(source_file, "%s%s", m_command_prefix, iter.first);
-					i++;
-				}
-				fprintf(source_file, ";\n");
-				decrease_indent();
-			} else {
-				fprintf(source_file, "%s%s = true;", m_enumeration_prefix, extension);
-			}
-		}
-	}
-
-	fprintf(source_file, "\n");
-	indent_fprintf(source_file, "return ");
+	indent_fprintf(source_file, "\n");
+	indent_fprintf(source_file, "ret = ");
 	increase_indent();
-
 	int i = 0;
-	for (auto iter : base_interface.commands) {
+	for (auto iter : core_3_2.commands) {
 		if ((i % 4) == 3) {
 			fprintf(source_file, "\n");
 			indent_fprintf(source_file, "");
@@ -831,11 +749,31 @@ void api::bindify(XMLDocument &doc, const char *header_name, FILE *header_file ,
 		fprintf(source_file, "%s%s", m_command_prefix, iter.first);
 		i++;
 	}
-
 	fprintf(source_file, ";\n");
-	decrease_indent(); //return true
+	decrease_indent();
 
-	decrease_indent(); //bool init_...()
+	for (auto iter : m_feature_interfaces) {
+		if (iter.first <= min_version || !iter.second->commands.size())
+			continue;
+		indent_fprintf(source_file, "\n");
+		indent_fprintf(source_file, "ret = ret && ((version < %d) || (", iter.first);
+		increase_indent();
+		i = 0;
+		for (auto iter2 : iter.second->commands) {
+			if ((i % 4) == 3) {
+				fprintf(source_file, "\n");
+				indent_fprintf(source_file, "");
+			}
+			if (i)
+				fprintf(source_file, " && ");
+			fprintf(source_file, "%s%s", m_command_prefix, iter2.first);
+			i++;
+		}
+		fprintf(source_file, "));\n");
+		decrease_indent();
+	}
+	indent_fprintf(source_file, "return ret;\n"); //init()
+	decrease_indent();
 	indent_fprintf(source_file, "}\n"); //init()
 }
 
@@ -846,7 +784,6 @@ static void print_help(const char *program_name)
 	       "Options:\n"
 	       "  -a,--api <api>                     Generate bindings for API <api>. Must be one\n"
 	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
-	       "  -v, --version <major>.<minor>      Version number of <api> to generate\n"
 	       "  -e, --extension <exstension-name>  Generate bindings for extension <extension-name>\n");
 }
 
@@ -858,13 +795,10 @@ int main(int argc, char **argv)
 	static struct option options [] = {
 		{"api"       , 1, 0, 'a' },
 		{"extension" , 1, 0, 'e' },
-		{"version"   , 1, 0, 'v' },
 		{"help"      , 0, 0, 'h' }
 	};
 
 	const char *api_name = "gl";
-	int api_major_version = 3;
-	int api_minor_version = 3;
 	std::set<const char *, cstring_compare> extensions;
 
 	while (1) {
@@ -886,15 +820,6 @@ int main(int argc, char **argv)
 		case 'e':
 			extensions.insert(optarg);
 			break;
-		case 'v':
-			api_minor_version = 0;
-			ret = sscanf(optarg, "%d.%d", &api_major_version, &api_minor_version);
-			if (ret == 0) {
-				printf("Invalid version number '%s'\n\n", optarg);
-				print_help(argv[0]);
-				exit(-1);
-			}
-			break;
 		case 'h':
 			print_help(argv[0]);
 			exit(0);
@@ -902,8 +827,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	printf("Generating bindings for %s version %d.%d\n", api_name, api_major_version, api_minor_version);
-	api api(api_name, api_major_version, api_minor_version, extensions);
+	printf("Generating bindings for %s\n", api_name);
+	api api(api_name, extensions);
 
 	g_api = &api;
 
@@ -917,22 +842,28 @@ int main(int argc, char **argv)
 
 	char header_name[100];
 	char cpp_name[100];
-	snprintf(header_name, sizeof(header_name), "%s_%d_%d%s",
+	snprintf(header_name, sizeof(header_name), "glb_%s%s",
 		api.name(),
-		api_major_version,
-		api_minor_version,
 		".h");
-	snprintf(cpp_name, sizeof(header_name), "%s_%d_%d%s",
+	snprintf(cpp_name, sizeof(header_name), "glb_%s%s",
 		api.name(),
-		api_major_version,
-		api_minor_version,
 		".c");
 
 	FILE *header_file = fopen(header_name, "w");
 	FILE *source_file = fopen(cpp_name, "w");
 
 	printf("Writing bindings to %s and %s\n", cpp_name, header_name);
-	api.bindify(doc, header_name, header_file, source_file);
+
+	khronos_registry_visitor registry_visitor(doc, api);
+	doc.Accept(&registry_visitor);
+
+	if (!strcmp(api_name, "gl")) {
+		api.bindify(header_name, 32, header_file, source_file);
+	} else if (!strcmp(api_name, "glx")) {
+		api.bindify(header_name, 14, header_file, source_file);
+	} else if (!strcmp(api_name, "wgl")) {
+		api.bindify(header_name, 10, header_file, source_file);
+	}
 
 	return 0;
 }
