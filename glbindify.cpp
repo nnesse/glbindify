@@ -514,7 +514,6 @@ class khronos_registry_visitor : public XMLVisitor
 			return false;
 		} else if (tag_stack_test(elem, "extension", "extensions")) {
 			const char *api_name = m_api.name();
-
 			if (!strcmp(m_api.m_name, "gl")) {
 				api_name = "glcore";
 			}
@@ -524,6 +523,13 @@ class khronos_registry_visitor : public XMLVisitor
 			char *saveptr;
 			char *token = strtok_r(supported_copy, "|", &saveptr);
 			const char *name = elem.Attribute("name") + strlen(m_api.name()) + 1;
+
+			//We can't support SGI extensions due to missing types
+			if (!strcmp(m_api.m_name, "glx") && (strstr(name, "SGI") == name)) {
+				return false;
+			}
+
+			//Check if this extension is supported by the target API
 			while (token) {
 				if (!strcmp(token, api_name)) {
 					break;
