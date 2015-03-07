@@ -144,8 +144,8 @@ struct command {
 		fprintf(out, ") = NULL;\n");
 	}
 
-	void print_load(FILE *out, const char *command_prefix, bool strip_api_prefix) {
-		indent_fprintf(out, "%s%s = (%s (*)(", (strip_api_prefix ? "" : command_prefix), name, type_decl.c_str());
+	void print_load(FILE *out, const char *command_prefix) {
+		indent_fprintf(out, "%s%s = (%s (*)(", command_prefix, name, type_decl.c_str());
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(int i = 1; i < params.size(); i++) {
@@ -169,6 +169,7 @@ struct interface {
 	void resolve_types();
 	void print_definition(FILE *header_file);
 	void print_declaration(FILE *header_file);
+	void print_load_check(FILE *source_file);
 };
 
 struct api {
@@ -512,13 +513,19 @@ class khronos_registry_visitor : public XMLVisitor
 			elem.Accept(&i_visitor);
 			return false;
 		} else if (tag_stack_test(elem, "extension", "extensions")) {
+			const char *api_name = m_api.name();
+
+			if (!strcmp(m_api.m_name, "gl")) {
+				api_name = "glcore";
+			}
+
 			const char *supported = elem.Attribute("supported");
 			char *supported_copy = strdup(supported);
 			char *saveptr;
 			char *token = strtok_r(supported_copy, "|", &saveptr);
 			const char *name = elem.Attribute("name") + strlen(m_api.name()) + 1;
 			while (token) {
-				if (!strcmp(token, m_api.name())) {
+				if (!strcmp(token, api_name)) {
 					break;
 				}
 				token = strtok_r(NULL, "|", &saveptr);
@@ -556,10 +563,16 @@ void interface::print_declaration(FILE *header_file)
 	const char *enumeration_prefix = g_api->m_enumeration_prefix;
 
 	for (auto val : types) {
-		indent_fprintf(header_file, "#ifndef GLB_type_%s\n", val.first);
-		indent_fprintf(header_file, "#define GLB_type_%s\n", val.first);
+		char *temp = strdup(val.first);
+		char *cur;
+		for (cur = temp; *cur; cur++)
+			if (*cur == ' ')
+				*cur = '_';
+		indent_fprintf(header_file, "#ifndef GLB_TYPE_%s\n", temp);
+		indent_fprintf(header_file, "#define GLB_TYPE_%s\n", temp);
 		indent_fprintf(header_file, "%s\n", val.second.c_str());
 		indent_fprintf(header_file, "#endif\n", enumeration_prefix, val.first);
+		free(temp);
 	}
 
 	indent_fprintf(header_file, "\n");
@@ -621,6 +634,26 @@ void interface::append(const interface &other)
 		commands.erase(iter.first);
 }
 
+void interface::print_load_check(FILE *source_file)
+{
+	if (!commands.size()) {
+		fprintf(source_file, "true");
+	} else {
+		const char *command_prefix = g_api->m_command_prefix;
+		int i = 0;
+		for (auto iter : commands) {
+			if ((i % 4) == 3) {
+				fprintf(source_file, "\n");
+				indent_fprintf(source_file, "");
+			}
+			if (i)
+				fprintf(source_file, " && ");
+			fprintf(source_file, "%s%s", g_api->m_command_prefix, iter.first);
+			i++;
+		}
+	}
+}
+
 void api::bindify(const char *header_name, int min_version, FILE *header_file , FILE *source_file)
 {
 	interface full_interface;
@@ -632,6 +665,10 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		else
 			core_3_2.append(*(iter.second));
 		max_version = iter.first > max_version ? iter.first : max_version;
+		full_interface.append(*(iter.second));
+	}
+	for (auto iter : m_extension_interfaces) {
+		iter.second->resolve_types();
 		full_interface.append(*(iter.second));
 	}
 	core_3_2.resolve_types();
@@ -674,6 +711,9 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	indent_fprintf(header_file, "typedef ptrdiff_t GLintptr;\n");
 	indent_fprintf(header_file, "typedef ptrdiff_t GLsizeiptr;\n");
 	indent_fprintf(header_file, "#endif\n");
+	indent_fprintf(header_file, "#ifndef GLB_%sVERSION\n", m_enumeration_prefix);
+	indent_fprintf(header_file, "#define GLB_%sVERSION %d\n", m_enumeration_prefix, min_version);
+	indent_fprintf(header_file, "#endif\n");
 
 	core_3_2.print_declaration(header_file);
 	for (auto iter : m_feature_interfaces) {
@@ -687,6 +727,15 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 			iter.second->print_declaration(header_file);
 			indent_fprintf(header_file, "#endif\n");
 		}
+	}
+
+	indent_fprintf(header_file, "\n");
+	for (auto iter : m_extension_interfaces) {
+		indent_fprintf(header_file, "\n");
+		indent_fprintf(header_file, "#if defined(GLB_ENABLE_%s%s)\n", m_enumeration_prefix, iter.first);
+		indent_fprintf(header_file, "extern bool GLB_%s%s;\n", m_enumeration_prefix, iter.first);
+		iter.second->print_declaration(header_file);
+		indent_fprintf(header_file, "#endif\n");
 	}
 
 	indent_fprintf(header_file, "\n");
@@ -718,61 +767,55 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	fprintf(source_file, "}\n");
 	fprintf(source_file, "#endif\n");
 	fprintf(source_file, "#define GLB_%sVERSION %d\n", m_enumeration_prefix, max_version);
+
+	for (auto iter : m_extension_interfaces) {
+		indent_fprintf(source_file, "#define GLB_ENABLE_%s%s\n", m_enumeration_prefix, iter.first);
+	}
+
 	fprintf(source_file, "#include \"%s\"\n", header_name);
 
-	indent_fprintf(source_file, "\n");
 	full_interface.print_definition(source_file);
+
+	indent_fprintf(source_file, "\n");
+	for (auto iter : m_extension_interfaces) {
+		indent_fprintf(source_file, "bool GLB_%s%s = false;\n", m_enumeration_prefix, iter.first);
+	}
 
 	indent_fprintf(source_file, "\n");
 	indent_fprintf(source_file, "bool init_%s(int maj, int min)\n", m_name);
 	indent_fprintf(source_file, "{\n");
 	increase_indent();
 	indent_fprintf(source_file, "int version = maj * 10 + min;\n");
-	indent_fprintf(source_file, "bool ret = true;\n");
 	indent_fprintf(source_file, "if (version < %d) return false;\n", min_version);
 
-
 	for (auto iter : full_interface.commands)
-		(iter.second)->print_load(source_file, m_command_prefix, false);
+		(iter.second)->print_load(source_file, m_command_prefix);
+
+	for (auto iter : m_extension_interfaces) {
+		indent_fprintf(source_file, "\n");
+		indent_fprintf(source_file, "GLB_%s%s = ", m_enumeration_prefix, iter.first);
+		increase_indent();
+		iter.second->print_load_check(source_file);
+		decrease_indent();
+		fprintf(source_file, ";\n");
+	}
 
 	indent_fprintf(source_file, "\n");
-	indent_fprintf(source_file, "ret = ");
-	increase_indent();
-	int i = 0;
-	for (auto iter : core_3_2.commands) {
-		if ((i % 4) == 3) {
-			fprintf(source_file, "\n");
-			indent_fprintf(source_file, "");
-		}
-		if (i)
-			fprintf(source_file, " && ");
-		fprintf(source_file, "%s%s", m_command_prefix, iter.first);
-		i++;
-	}
-	fprintf(source_file, ";\n");
-	decrease_indent();
+	indent_fprintf(source_file, "return ");
+	core_3_2.print_load_check(source_file);
 
 	for (auto iter : m_feature_interfaces) {
 		if (iter.first <= min_version || !iter.second->commands.size())
 			continue;
-		indent_fprintf(source_file, "\n");
-		indent_fprintf(source_file, "ret = ret && ((version < %d) || (", iter.first);
+		fprintf(source_file, "\n");
+		indent_fprintf(source_file, " && ((version < %d) ||\n", iter.first);
 		increase_indent();
-		i = 0;
-		for (auto iter2 : iter.second->commands) {
-			if ((i % 4) == 3) {
-				fprintf(source_file, "\n");
-				indent_fprintf(source_file, "");
-			}
-			if (i)
-				fprintf(source_file, " && ");
-			fprintf(source_file, "%s%s", m_command_prefix, iter2.first);
-			i++;
-		}
-		fprintf(source_file, "));\n");
+		indent_fprintf(source_file, "");
+		iter.second->print_load_check(source_file);
+		fprintf(source_file, ")");
 		decrease_indent();
 	}
-	indent_fprintf(source_file, "return ret;\n"); //init()
+	fprintf(source_file, ";\n");
 	decrease_indent();
 	indent_fprintf(source_file, "}\n"); //init()
 }
