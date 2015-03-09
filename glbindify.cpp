@@ -35,6 +35,11 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <math.h>
 
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+
 #include "tinyxml2.h"
 
 using namespace tinyxml2;
@@ -648,7 +653,7 @@ void interface::print_load_check(FILE *source_file)
 		const char *command_prefix = g_api->m_command_prefix;
 		int i = 0;
 		for (auto iter : commands) {
-			if ((i % 4) == 3) {
+			if ((i % 3) == 2) {
 				fprintf(source_file, "\n");
 				indent_fprintf(source_file, "");
 			}
@@ -665,6 +670,9 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	interface full_interface;
 	interface core_3_2;
 	int max_version = min_version;
+
+	bool is_gl_api = !strcmp(m_name, "gl");
+
 	for (auto iter : m_feature_interfaces) {
 		if (iter.first > min_version)
 			iter.second->resolve_types();
@@ -787,23 +795,77 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		indent_fprintf(source_file, "bool GLB_%s%s = false;\n", m_enumeration_prefix, iter.first);
 	}
 
+	if (is_gl_api) {
+		//
+		// Have gperf make a hash table for extension names. We can write the output
+		// directly to source file
+		//
+		fflush(source_file);
+		int fdpair[2];
+		pipe(fdpair);
+		pid_t child_pid = fork();
+		if(child_pid) {
+			close(fdpair[0]);
+			FILE *gperf_in = fdopen(fdpair[1], "w");
+			fprintf(gperf_in, "struct extension_match { const char *name; bool *support_flag; };\n");
+			fprintf(gperf_in, "\%\%\%\%\n");
+			for (auto iter : m_extension_interfaces) {
+				fprintf(gperf_in, "%s%s, &GLB_%s%s\n", m_enumeration_prefix, iter.first,
+					m_enumeration_prefix, iter.first);
+			}
+			fflush(gperf_in);
+			close(fdpair[1]);
+			waitpid(child_pid, NULL, 0);
+		} else {
+			close(fdpair[1]);
+			dup2(fdpair[0], STDIN_FILENO);
+			dup2(fileno(source_file), STDOUT_FILENO);
+			execlp("gperf", "gperf", "-t", 0);
+		}
+	}
+
 	indent_fprintf(source_file, "\n");
 	indent_fprintf(source_file, "bool init_%s(int maj, int min)\n", m_name);
 	indent_fprintf(source_file, "{\n");
 	increase_indent();
-	indent_fprintf(source_file, "int version = maj * 10 + min;\n");
-	indent_fprintf(source_file, "if (version < %d) return false;\n", min_version);
+	indent_fprintf(source_file, "int req_version = maj * 10 + min;\n");
+	if (is_gl_api) {
+		indent_fprintf(source_file, "int actual_maj, actual_min, actual_version, i;\n");
+		indent_fprintf(source_file, "int num_extensions;\n");
+	}
+	indent_fprintf(source_file, "if (req_version < %d) return false;\n", min_version);
+	indent_fprintf(source_file, "if (req_version > %d) return false;\n", max_version);
 
 	for (auto iter : full_interface.commands)
 		(iter.second)->print_load(source_file, m_command_prefix);
 
-	for (auto iter : m_extension_interfaces) {
+	if (is_gl_api) {
 		indent_fprintf(source_file, "\n");
-		indent_fprintf(source_file, "GLB_%s%s = ", m_enumeration_prefix, iter.first);
-		increase_indent();
-		iter.second->print_load_check(source_file);
-		decrease_indent();
-		fprintf(source_file, ";\n");
+		indent_fprintf(source_file, "if (!glGetIntegerv || !glGetStringi) return false;\n");
+		indent_fprintf(source_file, "glGetIntegerv(GL_NUM_EXTENSIONS, &num_extensions);\n");
+		indent_fprintf(source_file, "glGetIntegerv(GL_MAJOR_VERSION, &actual_maj);\n");
+		indent_fprintf(source_file, "glGetIntegerv(GL_MINOR_VERSION, &actual_min);\n");
+		indent_fprintf(source_file, "actual_version = actual_maj * 10 + actual_min;\n");
+		indent_fprintf(source_file, "if (actual_version < req_version) return false;\n");
+		indent_fprintf(source_file, "for (i = 0; i < num_extensions; i++) {\n");
+		indent_fprintf(source_file, "\tconst char *extname = glGetStringi(GL_EXTENSIONS, i);\n");
+		indent_fprintf(source_file, "\tstruct extension_match *match = in_word_set(extname, strlen(extname));\n");
+		indent_fprintf(source_file, "\tif (match)\n");
+		indent_fprintf(source_file, "\t\t*match->support_flag = true;\n");
+		indent_fprintf(source_file, "}\n");
+	}
+
+	for (auto iter : m_extension_interfaces) {
+		if (iter.second->commands.size()) {
+			indent_fprintf(source_file, "\n");
+			indent_fprintf(source_file, "GLB_%s%s = GLB_%s%s && ",
+					m_enumeration_prefix, iter.first,
+					m_enumeration_prefix, iter.first);
+			increase_indent();
+			iter.second->print_load_check(source_file);
+			decrease_indent();
+			fprintf(source_file, ";\n");
+		}
 	}
 
 	indent_fprintf(source_file, "\n");
@@ -814,7 +876,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		if (iter.first <= min_version || !iter.second->commands.size())
 			continue;
 		fprintf(source_file, "\n");
-		indent_fprintf(source_file, " && ((version < %d) ||\n", iter.first);
+		indent_fprintf(source_file, " && ((req_version < %d) ||\n", iter.first);
 		increase_indent();
 		indent_fprintf(source_file, "");
 		iter.second->print_load_check(source_file);
