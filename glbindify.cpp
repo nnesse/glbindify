@@ -511,11 +511,14 @@ class khronos_registry_visitor : public XMLVisitor
 			}
 			return false;
 		} else if (tag_stack_test(elem, "feature", "registry")) {
-			interface *feature = new interface();
-			float version = elem.FloatAttribute("number");
-			m_api.m_feature_interfaces[(int)roundf(version*10)] = feature;
-			interface_visitor i_visitor(m_api, elem, feature);
-			elem.Accept(&i_visitor);
+			const char *supported = elem.Attribute("api");
+			if (!strcmp(supported, m_api.m_name)) {
+				interface *feature = new interface();
+				float version = elem.FloatAttribute("number");
+				m_api.m_feature_interfaces[(int)roundf(version*10)] = feature;
+				interface_visitor i_visitor(m_api, elem, feature);
+				elem.Accept(&i_visitor);
+			}
 			return false;
 		} else if (tag_stack_test(elem, "extension", "extensions")) {
 			const char *api_name = m_api.name();
