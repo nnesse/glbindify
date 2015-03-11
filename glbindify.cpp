@@ -845,7 +845,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		indent_fprintf(source_file, "actual_version = actual_maj * 10 + actual_min;\n");
 		indent_fprintf(source_file, "if (actual_version < req_version) return false;\n");
 		indent_fprintf(source_file, "for (i = 0; i < num_extensions; i++) {\n");
-		indent_fprintf(source_file, "\tconst char *extname = glGetStringi(GL_EXTENSIONS, i);\n");
+		indent_fprintf(source_file, "\tconst char *extname = (const char *)glGetStringi(GL_EXTENSIONS, i);\n");
 		indent_fprintf(source_file, "\tstruct extension_match *match = in_word_set(extname, strlen(extname));\n");
 		indent_fprintf(source_file, "\tif (match)\n");
 		indent_fprintf(source_file, "\t\t*match->support_flag = true;\n");
@@ -875,9 +875,9 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		fprintf(source_file, "\n");
 		indent_fprintf(source_file, " && ((req_version < %d) ||\n", iter.first);
 		increase_indent();
-		indent_fprintf(source_file, "");
+		indent_fprintf(source_file, "(");
 		iter.second->print_load_check(source_file);
-		fprintf(source_file, ")");
+		fprintf(source_file, "))");
 		decrease_indent();
 	}
 	fprintf(source_file, ";\n");
