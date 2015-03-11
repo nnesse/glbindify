@@ -891,8 +891,7 @@ static void print_help(const char *program_name)
 	printf("\n"
 	       "Options:\n"
 	       "  -a,--api <api>                     Generate bindings for API <api>. Must be one\n"
-	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
-	       "  -e, --extension <exstension-name>  Generate bindings for extension <extension-name>\n");
+	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n");
 }
 
 int main(int argc, char **argv)
@@ -902,7 +901,6 @@ int main(int argc, char **argv)
 
 	static struct option options [] = {
 		{"api"       , 1, 0, 'a' },
-		{"extension" , 1, 0, 'e' },
 		{"help"      , 0, 0, 'h' }
 	};
 
