@@ -178,12 +178,6 @@ struct interface {
 };
 
 struct api {
-	friend class enumeration_visitor;
-	friend class feature_visitor;
-	friend class extension_visitor;
-	friend class type_visitor;
-	friend class khronos_registry_visitor;
-
 	//Api description
 	const char *m_name;
 	const char *m_command_prefix;
