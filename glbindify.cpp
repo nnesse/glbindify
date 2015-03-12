@@ -39,6 +39,7 @@ THE SOFTWARE.
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <errno.h>
 
 #include "tinyxml2.h"
 
@@ -799,9 +800,12 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		//
 		fflush(source_file);
 		int fdpair[2];
-		pipe(fdpair);
+		int rc = pipe(fdpair);
+		if (rc) {
+			fprintf(stderr, "pipe() failed: %s. Aborting...\n", strerror(errno));
+		}
 		pid_t child_pid = fork();
-		if(child_pid) {
+		if (child_pid) {
 			close(fdpair[0]);
 			FILE *gperf_in = fdopen(fdpair[1], "w");
 			fprintf(gperf_in, "struct extension_match { const char *name; bool *support_flag; };\n");
