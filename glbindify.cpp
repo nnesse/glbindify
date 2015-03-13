@@ -181,6 +181,7 @@ struct interface {
 struct api {
 	//Api description
 	const char *m_name;
+	const char *m_variant_name;
 	const char *m_command_prefix;
 	const char *m_mangle_prefix;
 	const char *m_enumeration_prefix;
@@ -218,8 +219,10 @@ struct api {
 	}
 
 	api(const char *name,
+			const char *variant_name,
 			std::set<const char *, cstring_compare> &extensions) :
 		m_name(name),
+		m_variant_name(variant_name),
 		m_extensions(extensions)
 	{
 		if (!strcmp(m_name,"wgl")) {
@@ -516,11 +519,7 @@ class khronos_registry_visitor : public XMLVisitor
 			}
 			return false;
 		} else if (tag_stack_test(elem, "extension", "extensions")) {
-			const char *api_name = m_api.name();
-			if (!strcmp(m_api.m_name, "gl")) {
-				api_name = "glcore";
-			}
-
+			const char *api_variant_name = m_api.m_variant_name;
 			const char *supported = elem.Attribute("supported");
 			char *supported_copy = strdup(supported);
 			char *saveptr;
@@ -534,7 +533,7 @@ class khronos_registry_visitor : public XMLVisitor
 
 			//Check if this extension is supported by the target API
 			while (token) {
-				if (!strcmp(token, api_name)) {
+				if (!strcmp(token, api_variant_name)) {
 					break;
 				}
 				token = strtok_r(NULL, "|", &saveptr);
@@ -909,6 +908,7 @@ int main(int argc, char **argv)
 	};
 
 	const char *api_name = "gl";
+	const char *api_variant_name = "glcore";
 	std::set<const char *, cstring_compare> extensions;
 
 	while (1) {
@@ -926,6 +926,11 @@ int main(int argc, char **argv)
 			break;
 		case 'a':
 			api_name = optarg;
+			if (!strcmp(api_name, "gl")) {
+				api_variant_name = "glcore";
+			} else {
+				api_variant_name = api_name;
+			}
 			break;
 		case 'e':
 			extensions.insert(optarg);
@@ -938,7 +943,7 @@ int main(int argc, char **argv)
 	}
 
 	printf("Generating bindings for %s\n", api_name);
-	api api(api_name, extensions);
+	api api(api_name, api_variant_name, extensions);
 
 	g_api = &api;
 
@@ -952,11 +957,11 @@ int main(int argc, char **argv)
 
 	char header_name[100];
 	char cpp_name[100];
-	snprintf(header_name, sizeof(header_name), "glb_%s%s",
-		api.name(),
+	snprintf(header_name, sizeof(header_name), "glb-%s%s",
+		api_variant_name,
 		".h");
-	snprintf(cpp_name, sizeof(header_name), "glb_%s%s",
-		api.name(),
+	snprintf(cpp_name, sizeof(header_name), "glb-%s%s",
+		api_variant_name,
 		".c");
 
 	FILE *header_file = fopen(header_name, "w");
