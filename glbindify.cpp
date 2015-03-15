@@ -750,7 +750,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	}
 
 	indent_fprintf(header_file, "\n");
-	indent_fprintf(header_file, "bool init_%s(int maj, int min);\n", m_name);
+	indent_fprintf(header_file, "bool glb_%s_init(int maj, int min);\n",  m_variant_name);
 
 	indent_fprintf(header_file, "\n");
 	fprintf(header_file, "#ifdef __cplusplus\n");
@@ -825,7 +825,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	}
 
 	indent_fprintf(source_file, "\n");
-	indent_fprintf(source_file, "bool init_%s(int maj, int min)\n", m_name);
+	indent_fprintf(source_file, "bool glb_%s_init(int maj, int min)\n", m_variant_name);
 	indent_fprintf(source_file, "{\n");
 	increase_indent();
 	indent_fprintf(source_file, "int req_version = maj * 10 + min;\n");
