@@ -527,7 +527,7 @@ class khronos_registry_visitor : public XMLVisitor
 			const char *name = elem.Attribute("name") + strlen(m_api.name()) + 1;
 
 			//We can't support SGI extensions due to missing types
-			if (!strcmp(m_api.m_name, "glx") && (strstr(name, "SGI") == name)) {
+			if (!strcmp(m_api.m_name, "glx") && (strstr(name, "SGI") == name) && !strstr(name,"swap_control")) {
 				return false;
 			}
 
