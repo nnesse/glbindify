@@ -1,0 +1,11 @@
+Source: glbindify
+Section: unknown
+Priority: optional
+Maintainer: Neils Nesse <nnesse@sonic.net>
+Build-Depends: debhelper (>= 8.0.0), autotools-dev
+Standards-Version: 3.9.4
+
+Package: glbindify
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Generates bindings for OpenGL and other khronos API's
