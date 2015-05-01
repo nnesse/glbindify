@@ -87,7 +87,7 @@ std::set<const char *, cstring_compare> g_common_gl_typedefs = {
 	"GLint",
 	"GLubyte",
 	"GLushort",
-	"GLuint"
+	"GLuint",
 	"GLsizei",
 	"GLfloat",
 	"GLdouble",
