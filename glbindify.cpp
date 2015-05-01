@@ -796,7 +796,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 			close(fdpair[1]);
 			dup2(fdpair[0], STDIN_FILENO);
 			dup2(fileno(source_file), STDOUT_FILENO);
-			execlp("gperf", "gperf", "-t", 0);
+			execlp("gperf", "gperf", "-t", "-F", ",NULL", 0);
 		}
 	}
 
