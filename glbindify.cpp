@@ -285,6 +285,7 @@ class command_visitor : public data_builder_visitor<command>
 				return true;
 			} else {
 				delete m_data;
+				m_data = NULL;
 				return false;
 			}
 		} else if (parent_tag_stack_test(text, "ptype", "proto")) {
