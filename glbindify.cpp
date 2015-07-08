@@ -162,8 +162,6 @@ struct api {
 	const char *m_mangle_prefix;
 	const char *m_enumeration_prefix;
 
-	std::set<const char *, cstring_compare> m_extensions;
-
 	//List of all enums and commands
 	std::map<const char *, unsigned int, cstring_compare> m_enum_map;
 	std::vector<enumeration *> m_enumerations;
@@ -194,12 +192,9 @@ struct api {
 		return m_name;
 	}
 
-	api(const char *name,
-			const char *variant_name,
-			std::set<const char *, cstring_compare> &extensions) :
+	api(const char *name, const char *variant_name) :
 		m_name(name),
-		m_variant_name(variant_name),
-		m_extensions(extensions)
+		m_variant_name(variant_name)
 	{
 		if (!strcmp(m_name,"wgl")) {
 			m_command_prefix = "wgl";
@@ -885,7 +880,6 @@ int main(int argc, char **argv)
 
 	const char *api_name = "gl";
 	const char *api_variant_name = "glcore";
-	std::set<const char *, cstring_compare> extensions;
 
 	while (1) {
 		int option_index;
@@ -908,9 +902,6 @@ int main(int argc, char **argv)
 				api_variant_name = api_name;
 			}
 			break;
-		case 'e':
-			extensions.insert(optarg);
-			break;
 		case 'h':
 			print_help(argv[0]);
 			exit(0);
@@ -919,7 +910,7 @@ int main(int argc, char **argv)
 	}
 
 	printf("Generating bindings for %s\n", api_name);
-	api api(api_name, api_variant_name, extensions);
+	api api(api_name, api_variant_name);
 
 	g_api = &api;
 
