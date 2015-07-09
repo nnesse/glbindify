@@ -6,21 +6,24 @@
 #include <string>
 #include <map>
 #include <set>
-#include <memory>
 #include <fstream>
 #include <stdio.h>
 #include <math.h>
 
 #include <stdio.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/types.h>
+
 #include <errno.h>
 
 #include "tinyxml2.h"
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
+
+#if HAVE_GPERF
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 #endif
 
 using namespace tinyxml2;
