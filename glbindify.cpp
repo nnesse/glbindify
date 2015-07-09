@@ -741,9 +741,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 
 	fprintf(source_file, "#ifndef _WIN32\n");
 	fprintf(source_file, "extern void (*glXGetProcAddress(const unsigned char *))(void);\n");
-	fprintf(source_file, "static inline void (*LoadProcAddress(const char *name))(void) {\n");
-	fprintf(source_file, "\treturn (*glXGetProcAddress)((const unsigned char *)name);\n");
-	fprintf(source_file, "}\n");
+	fprintf(source_file, "#define LoadProcAddress(name) (*glXGetProcAddress)((const unsigned char *)name)\n");
 	fprintf(source_file, "#include <stdio.h>\n");
 	fprintf(source_file, "#else\n");
 	fprintf(source_file, "#include <windows.h>\n");
