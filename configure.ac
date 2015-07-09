@@ -6,11 +6,14 @@ AC_INIT(glbindify, [0.1.0])
 AC_CANONICAL_SYSTEM
 AM_INIT_AUTOMAKE([foreign])
 
-AC_CHECK_PROG(GPERF,gperf,gperf)
+AC_CHECK_PROG(GPERF,gperf,yes,no)
 
 AC_PROG_CXX
 
-AS_IF([test x$GPERF != xgperf],AC_MSG_ERROR([Could not find gperf]))
+if [test x$GPERF == xyes]; then
+	AC_DEFINE([HAVE_GPERF], 1, [Set if gperf is available])
+fi
 
+AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

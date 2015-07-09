@@ -19,6 +19,10 @@
 
 #include "tinyxml2.h"
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 using namespace tinyxml2;
 
 struct api *g_api = NULL;
@@ -768,6 +772,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		indent_fprintf(source_file, "bool GLB_%s%s = false;\n", m_enumeration_prefix, iter->first);
 	}
 
+#if HAVE_GPERF
 	if (is_gl_api) {
 		//
 		// Have gperf make a hash table for extension names. We can write the output
@@ -799,6 +804,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 			execlp("gperf", "gperf", "-t", "-F", ",NULL", 0);
 		}
 	}
+#endif
 
 	indent_fprintf(source_file, "\n");
 	indent_fprintf(source_file, "bool glb_%s_init(int maj, int min)\n", m_variant_name);
@@ -825,9 +831,18 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		indent_fprintf(source_file, "if (actual_version < req_version) return false;\n");
 		indent_fprintf(source_file, "for (i = 0; i < num_extensions; i++) {\n");
 		indent_fprintf(source_file, "\tconst char *extname = (const char *)glGetStringi(GL_EXTENSIONS, i);\n");
+#if HAVE_GPERF
 		indent_fprintf(source_file, "\tstruct extension_match *match = in_word_set(extname, strlen(extname));\n");
 		indent_fprintf(source_file, "\tif (match)\n");
 		indent_fprintf(source_file, "\t\t*match->support_flag = true;\n");
+#else
+		FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
+			indent_fprintf(source_file, "\tif (!strcmp(extname, \"%s\")) {\n", iter->first);
+			indent_fprintf(source_file, "\t\tGLB_%s%s = true;\n", m_enumeration_prefix, iter->first);
+			indent_fprintf(source_file, "\t\tcontinue;\n");
+			indent_fprintf(source_file, "\t}\n");
+		}
+#endif
 		indent_fprintf(source_file, "}\n");
 	}
 
@@ -935,7 +950,11 @@ int main(int argc, char **argv)
 	g_api = &api;
 
 	char in_filename[200];
-	snprintf(in_filename, sizeof(in_filename),PKGDATADIR "/%s.xml", api.name());
+#ifdef PKGDATADIR
+	snprintf(in_filename, sizeof(in_filename), PKGDATADIR "/%s.xml", api.name());
+#else
+	snprintf(in_filename, sizeof(in_filename), "%s.xml", api.name());
+#endif
 	err = doc.LoadFile(in_filename);
 	if (err != XML_NO_ERROR) {
 		printf("Error loading khronos registry file %s\n", in_filename);

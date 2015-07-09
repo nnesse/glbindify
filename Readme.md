@@ -56,7 +56,16 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 		...
 	}
 
-Dependencies
+Building
 ------------
 
-glbindify requires a ANSI C++ compiler and a unix-like build environment. The tool and it's generated bindings are known to build on GNU/Linux systems, Cygwin, and MSYS2 with gcc 4.8.2. Other configurations may work but have not been tested.
+glbindify requires only a ANSI C++ compiler. If `gperf` is available glbindify will search generate a perfect hash map for extension checking at initialization time. On any UNIX-like system it can be built and installed with it's autotools build system:
+
+	./autogen.sh
+	./configure <options>
+	make
+	make install
+
+It can also be built without the build system just by compiling the sources with default options. For example:
+
+	g++ -ansi glbindify.cpp tinyxml2.cpp -o glbindify
