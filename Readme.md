@@ -59,4 +59,4 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 Dependencies
 ------------
 
-Glbindify requires a C++ compiler and a unix-like build environment. The tool and it's generated bindings are known to build on GNU/Linux systems, Cygwin, and MSYS2 with gcc 4.8.2. Other configurations may work but have not been tested.
+glbindify requires a ANSI C++ compiler and a unix-like build environment. The tool and it's generated bindings are known to build on GNU/Linux systems, Cygwin, and MSYS2 with gcc 4.8.2. Other configurations may work but have not been tested.

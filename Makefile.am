@@ -1,4 +1,4 @@
-AM_CXXFLAGS = -std=c++11
+AM_CXXFLAGS = -ansi
 AM_CPPFLAGS = -DPKGDATADIR=\"$(pkgdatadir)\"
 
 pkgdata_DATA=gl.xml glx.xml wgl.xml
