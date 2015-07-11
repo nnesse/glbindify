@@ -108,7 +108,7 @@ struct command {
 		indent_fprintf(out, "extern %s (*%s%s)(", type_decl.c_str(), command_prefix, name);
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
-			for(int i = 1; i < params.size(); i++) {
+			for(unsigned int i = 1; i < params.size(); i++) {
 				fprintf(out, ", %s", params[i].decl.c_str());
 			}
 		}
@@ -118,7 +118,7 @@ struct command {
 		indent_fprintf(out, "%s (*%s%s)(", type_decl.c_str(), command_prefix, name);
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
-			for(int i = 1; i < params.size(); i++) {
+			for(unsigned int i = 1; i < params.size(); i++) {
 				fprintf(out, ", %s", params[i].decl.c_str());
 			}
 		}
@@ -129,7 +129,7 @@ struct command {
 		indent_fprintf(out, "%s%s = (%s (*)(", command_prefix, name, type_decl.c_str());
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
-			for(int i = 1; i < params.size(); i++) {
+			for(unsigned int i = 1; i < params.size(); i++) {
 				fprintf(out, ", %s", params[i].decl.c_str());
 			}
 		}
@@ -236,7 +236,7 @@ private:
 	const XMLElement &m_root;
 
 	virtual bool visit(const XMLText &text) { return true; }
-	bool Visit(const XMLText &text) { visit(text); }
+	bool Visit(const XMLText &text) { return visit(text); }
 
 	virtual bool visit_begin(const XMLElement &elem, const XMLAttribute *attrib) { return true; }
 	virtual bool visit_enter(const XMLElement &elem, const XMLAttribute *attrib) { return true; }
@@ -435,9 +435,9 @@ public:
 
 class type_visitor :  public XMLVisitor
 {
+	api &m_api;
 	std::string m_type_decl;
 	const char *m_type_name;
-	api &m_api;
 
 	bool Visit(const XMLText &text)
 	{
@@ -642,7 +642,7 @@ void interface::print_load_check(FILE *source_file)
 			}
 			if (i)
 				fprintf(source_file, " && ");
-			fprintf(source_file, "%s%s", g_api->m_command_prefix, iter->first);
+			fprintf(source_file, "%s%s", command_prefix, iter->first);
 			i++;
 		}
 	}
@@ -840,7 +840,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		indent_fprintf(source_file, "\t\t*match->support_flag = true;\n");
 #else
 		FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-			indent_fprintf(source_file, "\tif (!strcmp(extname, \"%s\")) {\n", iter->first);
+			indent_fprintf(source_file, "\tif (!strcmp(extname, \"%s%s\")) {\n", m_enumeration_prefix, iter->first);
 			indent_fprintf(source_file, "\t\tGLB_%s%s = true;\n", m_enumeration_prefix, iter->first);
 			indent_fprintf(source_file, "\t\tcontinue;\n");
 			indent_fprintf(source_file, "\t}\n");
