@@ -888,7 +888,8 @@ static void print_help(const char *program_name)
 	printf("\n"
 	       "Options:\n"
 	       "  -a,--api <api>                     Generate bindings for API <api>. Must be one\n"
-	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n");
+	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
+	       "  -s,--srcdir <dir>                  Directory to find XML sources\n");
 }
 
 int main(int argc, char **argv)
@@ -913,16 +914,17 @@ int main(int argc, char **argv)
 
 	static struct option options [] = {
 		{"api"       , 1, 0, 'a' },
+		{"srcdir"    , 1, 0, 's' },
 		{"help"      , 0, 0, 'h' }
 	};
 
 	const char *api_name = "gl";
 	const char *api_variant_name = "glcore";
+	const char *srcdir = NULL;
 
 	while (1) {
 		int option_index;
-		int ret;
-		int c = getopt_long(argc, argv, "a:e:v:l:", options, &option_index);
+		int c = getopt_long(argc, argv, "a:s:", options, &option_index);
 		if (c == -1) {
 			break;
 		}
@@ -940,6 +942,9 @@ int main(int argc, char **argv)
 				api_variant_name = api_name;
 			}
 			break;
+		case 's':
+			srcdir = optarg;
+			break;
 		case 'h':
 			print_help(argv[0]);
 			exit(0);
@@ -954,9 +959,15 @@ int main(int argc, char **argv)
 
 	char in_filename[200];
 #ifdef PKGDATADIR
+	if (!srcdir) {
+		srcdir = PKGDATADIR;
+	}
 	snprintf(in_filename, sizeof(in_filename), PKGDATADIR "/%s.xml", api.name());
 #else
-	snprintf(in_filename, sizeof(in_filename), "%s.xml", api.name());
+	if (!srcdir) {
+		srcdir = ".";
+	}
+	snprintf(in_filename, sizeof(in_filename), "%s/%s.xml", srcdir, api.name());
 #endif
 	err = doc.LoadFile(in_filename);
 	if (err != XML_NO_ERROR) {
