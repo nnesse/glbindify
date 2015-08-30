@@ -59,7 +59,7 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 Building
 ------------
 
-glbindify requires only a ANSI C++ compiler. If `gperf` is available glbindify will search generate a perfect hash map for extension checking at initialization time. On any UNIX-like system it can be built and installed with it's autotools build system:
+glbindify's only dependency is a C++ compiler. If `gperf` is available glbindify will search generate a perfect hash map for extension checking at initialization time. On any UNIX-like system it can be built and installed with it's autotools build system:
 
 	./autogen.sh
 	./configure <options>
@@ -68,4 +68,4 @@ glbindify requires only a ANSI C++ compiler. If `gperf` is available glbindify w
 
 It can also be built without the build system just by compiling the sources with default options. For example:
 
-	g++ -ansi glbindify.cpp tinyxml2.cpp -o glbindify
+	g++ glbindify.cpp tinyxml2.cpp -o glbindify
