@@ -56,6 +56,25 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 		...
 	}
 
+Binding namespace
+-----------------
+
+If desired the default `glb` namespace of the generated inteface can be changed on the command line using the `-n` flag. If used, all instances of `glb` above
+will be changed to the selected namespace and all instances of `GLB` will be replaced with the upper case version of the namespace.
+
+Example: Generate C bindings for OpenGL with a `myapp` namespace
+
+	`glbindify -a gl -n myapp`
+	
+Example: Using C bindings with a `myapp` namespace
+
+	#include "myapp-glcore.h"
+	...
+	if (!myapp_glcore_init(3, 3))
+		exit(-1);
+	...
+	glDrawArrays(...);
+
 Building
 ------------
 

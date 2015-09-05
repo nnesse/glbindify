@@ -31,6 +31,9 @@ using namespace tinyxml2;
 struct api *g_api = NULL;
 std::string g_indent_string;
 
+const char *g_prefix;
+const char *g_macro_prefix;
+
 #define FOREACH(var, cont, type) \
 	for (type::iterator var = cont.begin(); var != cont.end(); var++)
 
@@ -164,7 +167,6 @@ struct api {
 	const char *m_name;
 	const char *m_variant_name;
 	const char *m_command_prefix;
-	const char *m_mangle_prefix;
 	const char *m_enumeration_prefix;
 
 	//List of all enums and commands
@@ -212,15 +214,12 @@ struct api {
 	{
 		if (!strcmp(m_name,"wgl")) {
 			m_command_prefix = "wgl";
-			m_mangle_prefix = "_glb_wgl";
 			m_enumeration_prefix = "WGL_";
 		} else if (!strcmp(m_name,"glx")) {
 			m_command_prefix = "glX";
-			m_mangle_prefix = "_glb_glX";
 			m_enumeration_prefix = "GLX_";
 		} else if (!strcmp(m_name,"gl")) {
 			m_command_prefix = "gl";
-			m_mangle_prefix = "_glb_gl";
 			m_enumeration_prefix = "GL_";
 		}
 	}
@@ -562,8 +561,8 @@ void interface::print_declaration(FILE *header_file)
 		for (cur = temp; *cur; cur++)
 			if (*cur == ' ')
 				*cur = '_';
-		indent_fprintf(header_file, "#ifndef GLB_TYPE_%s\n", temp);
-		indent_fprintf(header_file, "#define GLB_TYPE_%s\n", temp);
+		indent_fprintf(header_file, "#ifndef %s_TYPE_%s\n", g_macro_prefix, temp);
+		indent_fprintf(header_file, "#define %s_TYPE_%s\n", g_macro_prefix, temp);
 		indent_fprintf(header_file, "%s\n", val->second.c_str());
 		indent_fprintf(header_file, "#endif\n", enumeration_prefix, val->first);
 		free(temp);
@@ -586,9 +585,9 @@ void interface::print_declaration(FILE *header_file)
 	}
 	FOREACH (iter, commands, commands_type) {
 		command *command = iter->second;
-		fprintf(header_file, "#define %s%s %s%s\n",
+		fprintf(header_file, "#define %s%s _%s_%s%s\n",
 				g_api->m_command_prefix, command->name,
-				g_api->m_mangle_prefix, command->name);
+				g_prefix, g_api->m_command_prefix, command->name);
 		command->print_declare(header_file, g_api->m_command_prefix);
 	}
 }
@@ -707,16 +706,18 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	indent_fprintf(header_file, "typedef ptrdiff_t GLintptr;\n");
 	indent_fprintf(header_file, "typedef ptrdiff_t GLsizeiptr;\n");
 	indent_fprintf(header_file, "#endif\n");
-	indent_fprintf(header_file, "#ifndef GLB_%sVERSION\n", m_enumeration_prefix);
-	indent_fprintf(header_file, "#define GLB_%sVERSION %d\n", m_enumeration_prefix, min_version);
+	indent_fprintf(header_file, "#ifndef %s_%sVERSION\n", g_macro_prefix, m_enumeration_prefix);
+	indent_fprintf(header_file, "#define %s_%sVERSION %d\n", g_macro_prefix, m_enumeration_prefix, min_version);
 	indent_fprintf(header_file, "#endif\n");
 
 	core_3_2.print_declaration(header_file);
 	FOREACH (iter, m_feature_interfaces, feature_interfaces_type) {
 		if (iter->first > min_version) {
 			indent_fprintf(header_file, "\n");
-			indent_fprintf(header_file, "#if defined(GLB_%sVERSION) && GLB_%sVERSION >= %d\n",
+			indent_fprintf(header_file, "#if defined(%s_%sVERSION) && %s_%sVERSION >= %d\n",
+					g_macro_prefix,
 					m_enumeration_prefix,
+					g_macro_prefix,
 					m_enumeration_prefix,
 					iter->first);
 			indent_fprintf(header_file, "\n");
@@ -728,14 +729,14 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	indent_fprintf(header_file, "\n");
 	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
 		indent_fprintf(header_file, "\n");
-		indent_fprintf(header_file, "#if defined(GLB_ENABLE_%s%s)\n", m_enumeration_prefix, iter->first);
-		indent_fprintf(header_file, "extern bool GLB_%s%s;\n", m_enumeration_prefix, iter->first);
+		indent_fprintf(header_file, "#if defined(%s_ENABLE_%s%s)\n", g_macro_prefix, m_enumeration_prefix, iter->first);
+		indent_fprintf(header_file, "extern bool %s_%s%s;\n", g_macro_prefix, m_enumeration_prefix, iter->first);
 		iter->second->print_declaration(header_file);
 		indent_fprintf(header_file, "#endif\n");
 	}
 
 	indent_fprintf(header_file, "\n");
-	indent_fprintf(header_file, "bool glb_%s_init(int maj, int min);\n",  m_variant_name);
+	indent_fprintf(header_file, "bool %s_%s_init(int maj, int min);\n",  g_prefix, m_variant_name);
 
 	indent_fprintf(header_file, "\n");
 	fprintf(header_file, "#ifdef __cplusplus\n");
@@ -760,10 +761,10 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	fprintf(source_file, "\telse return (PROC)GetProcAddress(GetModuleHandleA(\"OpenGL32.dll\"), (LPCSTR)name);\n");
 	fprintf(source_file, "}\n");
 	fprintf(source_file, "#endif\n");
-	fprintf(source_file, "#define GLB_%sVERSION %d\n", m_enumeration_prefix, max_version);
+	fprintf(source_file, "#define %s_%sVERSION %d\n", g_macro_prefix, m_enumeration_prefix, max_version);
 
 	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-		indent_fprintf(source_file, "#define GLB_ENABLE_%s%s\n", m_enumeration_prefix, iter->first);
+		indent_fprintf(source_file, "#define %s_ENABLE_%s%s\n", g_macro_prefix, m_enumeration_prefix, iter->first);
 	}
 
 	fprintf(source_file, "#include \"%s\"\n", header_name);
@@ -772,7 +773,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 
 	indent_fprintf(source_file, "\n");
 	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-		indent_fprintf(source_file, "bool GLB_%s%s = false;\n", m_enumeration_prefix, iter->first);
+		indent_fprintf(source_file, "bool %s_%s%s = false;\n", g_macro_prefix, m_enumeration_prefix, iter->first);
 	}
 
 #if HAVE_GPERF
@@ -794,8 +795,8 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 			fprintf(gperf_in, "struct extension_match { const char *name; bool *support_flag; };\n");
 			fprintf(gperf_in, "\%\%\%\%\n");
 			FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-				fprintf(gperf_in, "%s%s, &GLB_%s%s\n", m_enumeration_prefix, iter->first,
-					m_enumeration_prefix, iter->first);
+				fprintf(gperf_in, "%s%s, &%s_%s%s\n", m_enumeration_prefix, iter->first,
+					g_macro_prefix, m_enumeration_prefix, iter->first);
 			}
 			fflush(gperf_in);
 			close(fdpair[1]);
@@ -804,13 +805,13 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 			close(fdpair[1]);
 			dup2(fdpair[0], STDIN_FILENO);
 			dup2(fileno(source_file), STDOUT_FILENO);
-			execlp("gperf", "gperf", "-t", "-F", ",NULL", 0);
+			execlp("gperf", "gperf", "-D","-t", "-F", ",NULL", 0);
 		}
 	}
 #endif
 
 	indent_fprintf(source_file, "\n");
-	indent_fprintf(source_file, "bool glb_%s_init(int maj, int min)\n", m_variant_name);
+	indent_fprintf(source_file, "bool %s_%s_init(int maj, int min)\n", g_prefix, m_variant_name);
 	indent_fprintf(source_file, "{\n");
 	increase_indent();
 	indent_fprintf(source_file, "int req_version = maj * 10 + min;\n");
@@ -841,7 +842,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 #else
 		FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
 			indent_fprintf(source_file, "\tif (!strcmp(extname, \"%s%s\")) {\n", m_enumeration_prefix, iter->first);
-			indent_fprintf(source_file, "\t\tGLB_%s%s = true;\n", m_enumeration_prefix, iter->first);
+			indent_fprintf(source_file, "\t\t%s_%s%s = true;\n", g_macro_prefix, m_enumeration_prefix, iter->first);
 			indent_fprintf(source_file, "\t\tcontinue;\n");
 			indent_fprintf(source_file, "\t}\n");
 		}
@@ -852,9 +853,9 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
 		if (iter->second->commands.size()) {
 			indent_fprintf(source_file, "\n");
-			indent_fprintf(source_file, "GLB_%s%s = GLB_%s%s && ",
-					m_enumeration_prefix, iter->first,
-					m_enumeration_prefix, iter->first);
+			indent_fprintf(source_file, "%s_%s%s = %s_%s%s && ",
+					g_macro_prefix, m_enumeration_prefix, iter->first,
+					g_macro_prefix, m_enumeration_prefix, iter->first);
 			increase_indent();
 			iter->second->print_load_check(source_file);
 			decrease_indent();
@@ -889,6 +890,8 @@ static void print_help(const char *program_name)
 	       "Options:\n"
 	       "  -a,--api <api>                     Generate bindings for API <api>. Must be one\n"
 	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
+	       "  -n,--namespace <Namespace>         Namespace for generated bindings. This is the first\n"
+	       "                                     part of the name of every function and macro.\n"
 	       "  -s,--srcdir <dir>                  Directory to find XML sources\n");
 }
 
@@ -915,6 +918,7 @@ int main(int argc, char **argv)
 	static struct option options [] = {
 		{"api"       , 1, 0, 'a' },
 		{"srcdir"    , 1, 0, 's' },
+		{"namespace" , 1, 0, 'n' },
 		{"help"      , 0, 0, 'h' }
 	};
 
@@ -922,9 +926,12 @@ int main(int argc, char **argv)
 	const char *api_variant_name = "glcore";
 	const char *srcdir = NULL;
 
+	const char *prefix = "glb";
+	char *macro_prefix;
+
 	while (1) {
 		int option_index;
-		int c = getopt_long(argc, argv, "a:s:", options, &option_index);
+		int c = getopt_long(argc, argv, "a:s:n:", options, &option_index);
 		if (c == -1) {
 			break;
 		}
@@ -945,6 +952,9 @@ int main(int argc, char **argv)
 		case 's':
 			srcdir = optarg;
 			break;
+		case 'n':
+			prefix = optarg;
+			break;
 		case 'h':
 			print_help(argv[0]);
 			exit(0);
@@ -952,7 +962,15 @@ int main(int argc, char **argv)
 		}
 	}
 
-	printf("Generating bindings for %s\n", api_name);
+	macro_prefix = strdup(prefix);
+	int i;
+	for (i = 0; macro_prefix[i]; i++) {
+		macro_prefix[i] = toupper(macro_prefix[i]);
+	}
+	g_prefix = prefix;
+	g_macro_prefix = macro_prefix;
+
+	printf("Generating bindings for %s with namespace '%s'\n", api_name, g_prefix);
 	api api(api_name, api_variant_name);
 
 	g_api = &api;
@@ -977,10 +995,12 @@ int main(int argc, char **argv)
 
 	char header_name[100];
 	char cpp_name[100];
-	snprintf(header_name, sizeof(header_name), "glb-%s%s",
+	snprintf(header_name, sizeof(header_name), "%s-%s%s",
+		g_prefix,
 		api_variant_name,
 		".h");
-	snprintf(cpp_name, sizeof(header_name), "glb-%s%s",
+	snprintf(cpp_name, sizeof(header_name), "%s-%s%s",
+		g_prefix,
 		api_variant_name,
 		".c");
 
