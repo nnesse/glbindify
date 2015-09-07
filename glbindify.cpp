@@ -28,7 +28,6 @@
 
 using namespace tinyxml2;
 
-struct api *g_api = NULL;
 std::string g_indent_string;
 
 const char *g_prefix;
@@ -162,69 +161,51 @@ struct interface {
 	void print_load_check(FILE *source_file);
 };
 
-struct api {
 	//Api description
-	const char *m_name;
-	const char *m_variant_name;
-	const char *m_command_prefix;
-	const char *m_enumeration_prefix;
+const char *g_api_name;
+const char *g_variant_name;
+const char *g_command_prefix;
+const char *g_enumeration_prefix;
 
-	//List of all enums and commands
-	typedef std::map<const char *, unsigned int, cstring_compare> enum_map_type;
-	enum_map_type m_enum_map;
+//List of all enums and commands
+typedef std::map<const char *, unsigned int, cstring_compare> enum_map_type;
+enum_map_type g_enum_map;
 
-	std::vector<enumeration *> m_enumerations;
+std::vector<enumeration *> g_enumerations;
 
-	typedef std::map<const char *, command *, cstring_compare> commands_type;
-	commands_type m_commands;
+typedef std::map<const char *, command *, cstring_compare> commands_type;
+commands_type g_commands;
 
-	typedef std::map<const char *, std::string, cstring_compare> types_type;
-	types_type m_types;
+typedef std::map<const char *, std::string, cstring_compare> types_type;
+types_type g_types;
 
-	typedef std::map<int, interface *> feature_interfaces_type;
-	feature_interfaces_type m_feature_interfaces;
+typedef std::map<int, interface *> feature_interfaces_type;
+feature_interfaces_type g_feature_interfaces;
 
-	typedef std::map<const char *, interface *, cstring_compare> extension_interfaces_type;
-	extension_interfaces_type m_extension_interfaces;
+typedef std::map<const char *, interface *, cstring_compare> extension_interfaces_type;
+extension_interfaces_type g_extension_interfaces;
 
-	bool is_command_in_namespace(const char **name) {
-		if (strstr(*name, m_command_prefix)) {
-			*name = *name + strlen(m_command_prefix);
-			return true;
-		} else {
-			return false;
-		}
+bool is_command_in_namespace(const char **name)
+{
+	if (strstr(*name, g_command_prefix)) {
+		*name = *name + strlen(g_command_prefix);
+		return true;
+	} else {
+		return false;
 	}
-	bool is_enum_in_namespace(const char **name) {
-		if (strstr(*name, m_enumeration_prefix)) {
-			*name = *name + strlen(m_enumeration_prefix);
-			return true;
-		} else {
-			return false;
-		}
-	}
+}
 
-	const char *name() {
-		return m_name;
+bool is_enum_in_namespace(const char **name)
+{
+	if (strstr(*name, g_enumeration_prefix)) {
+		*name = *name + strlen(g_enumeration_prefix);
+		return true;
+	} else {
+		return false;
 	}
+}
 
-	api(const char *name, const char *variant_name) :
-		m_name(name),
-		m_variant_name(variant_name)
-	{
-		if (!strcmp(m_name,"wgl")) {
-			m_command_prefix = "wgl";
-			m_enumeration_prefix = "WGL_";
-		} else if (!strcmp(m_name,"glx")) {
-			m_command_prefix = "glX";
-			m_enumeration_prefix = "GLX_";
-		} else if (!strcmp(m_name,"gl")) {
-			m_command_prefix = "gl";
-			m_enumeration_prefix = "GL_";
-		}
-	}
-	void bindify(const char *header_name, int min_version, FILE *header_file, FILE *source_file);
-};
+void bindify(const char *header_name, int min_version, FILE *header_file, FILE *source_file);
 
 template <class T>
 class data_builder_visitor : public XMLVisitor
@@ -276,7 +257,6 @@ public:
 
 class command_visitor : public data_builder_visitor<command>
 {
-	api &m_api;
 	virtual bool visit(const XMLText &text)
 	{
 		if (!m_data)
@@ -293,7 +273,7 @@ class command_visitor : public data_builder_visitor<command>
 			m_data->type_decl += text.Value();
 		} else if (parent_tag_stack_test(text, "name", "proto")) {
 			const char *command_name = text.Value();
-			if (m_api.is_command_in_namespace(&command_name)) {
+			if (is_command_in_namespace(&command_name)) {
 				m_data->name = command_name;
 				return true;
 			} else {
@@ -331,17 +311,14 @@ class command_visitor : public data_builder_visitor<command>
 		}
 	}
 public:
-	command_visitor(const XMLElement &tag, api &api) :
-		data_builder_visitor<command>(tag),
-		m_api(api)
+	command_visitor(const XMLElement &tag) :
+		data_builder_visitor<command>(tag)
 	{
 	}
 };
 
 class enumeration_visitor : public data_builder_visitor<enumeration>
 {
-	api &m_api;
-
 	virtual bool visit_begin(const XMLElement &elem, const XMLAttribute *attrib)
 	{
 		const char *group_c = elem.Attribute("group");
@@ -353,7 +330,7 @@ class enumeration_visitor : public data_builder_visitor<enumeration>
 	virtual bool visit_enter(const XMLElement &elem, const XMLAttribute *attrib)
 	{
 		if (tag_test(elem, "enum")) {
-			if (elem.Attribute("api") && strcmp(elem.Attribute("api"), m_api.m_name))
+			if (elem.Attribute("api") && strcmp(elem.Attribute("api"), g_api_name))
 				return false;
 			unsigned int val = 0xffffffff;
 			int ret = sscanf(elem.Attribute("value"), "0x%x", &val);
@@ -361,9 +338,9 @@ class enumeration_visitor : public data_builder_visitor<enumeration>
 				ret = sscanf(elem.Attribute("value"), "%d", &val);
 			const char *enumeration_name = elem.Attribute("name");
 			if (ret == 1) {
-				if (m_api.is_enum_in_namespace(&enumeration_name)) {
+				if (is_enum_in_namespace(&enumeration_name)) {
 					m_data->enum_map[enumeration_name] = val;
-					m_api.m_enum_map[enumeration_name] = val;
+					g_enum_map[enumeration_name] = val;
 				}
 			} else {
 				printf("warning: can't parse value of enum %s: \"%s\"\n", elem.Attribute("name"), elem.Attribute("value"));
@@ -372,16 +349,14 @@ class enumeration_visitor : public data_builder_visitor<enumeration>
 		return false;
 	}
 public:
-	enumeration_visitor(const XMLElement &tag, api &api) :
-		data_builder_visitor<enumeration>(tag),
-		m_api(api)
+	enumeration_visitor(const XMLElement &tag) :
+		data_builder_visitor<enumeration>(tag)
 	{
 	}
 };
 
 class interface_visitor : public XMLVisitor
 {
-	api &m_api;
 	const XMLElement &m_root;
 	interface *m_interface;
 	bool VisitEnter(const XMLElement &elem, const XMLAttribute *attrib)
@@ -394,7 +369,7 @@ class interface_visitor : public XMLVisitor
 			return !elem.Attribute("profile") || !strcmp(elem.Attribute("profile"), "core");
 		} else if (tag_stack_test(elem, "enum", "require")) {
 			const char *enumeration_name = elem.Attribute("name");
-			if (m_api.is_enum_in_namespace(&enumeration_name)) {
+			if (is_enum_in_namespace(&enumeration_name)) {
 				m_interface->enums.insert(enumeration_name);
 				return true;
 			} else {
@@ -402,7 +377,7 @@ class interface_visitor : public XMLVisitor
 			}
 		} else if (tag_stack_test(elem, "enum", "remove")) {
 			const char *enumeration_name = elem.Attribute("name");
-			if (m_api.is_enum_in_namespace(&enumeration_name)) {
+			if (is_enum_in_namespace(&enumeration_name)) {
 				m_interface->removed_enums.insert(enumeration_name);
 				return true;
 			} else {
@@ -410,16 +385,16 @@ class interface_visitor : public XMLVisitor
 			}
 		} else if (tag_stack_test(elem, "command", "require")) {
 			const char *command_name = elem.Attribute("name");
-			if (m_api.is_command_in_namespace(&command_name)) {
-				m_interface->commands[command_name] = m_api.m_commands[command_name];
+			if (is_command_in_namespace(&command_name)) {
+				m_interface->commands[command_name] = g_commands[command_name];
 				return true;
 			} else {
 				return false;
 			}
 		} else if (tag_stack_test(elem, "command", "remove")) {
 			const char *command_name = elem.Attribute("name");
-			if (m_api.is_command_in_namespace(&command_name)) {
-				m_interface->removed_commands[command_name] = m_api.m_commands[command_name];
+			if (is_command_in_namespace(&command_name)) {
+				m_interface->removed_commands[command_name] = g_commands[command_name];
 				return true;
 			} else {
 				return false;
@@ -428,13 +403,12 @@ class interface_visitor : public XMLVisitor
 		return false;
 	}
 public:
-	interface_visitor(api &api, const XMLElement &root, interface *interface) :
-		m_api(api), m_root(root), m_interface(interface) {}
+	interface_visitor(const XMLElement &root, interface *interface) :
+		m_root(root), m_interface(interface) {}
 };
 
 class type_visitor :  public XMLVisitor
 {
-	api &m_api;
 	std::string m_type_decl;
 	const char *m_type_name;
 
@@ -452,7 +426,7 @@ class type_visitor :  public XMLVisitor
 	bool VisitEnter(const XMLElement &elem, const XMLAttribute *attrib)
 	{
 		if (tag_stack_test(elem, "type", "types")) {
-			return !elem.Attribute("api") || (elem.Attribute("api") == m_api.name());
+			return !elem.Attribute("api") || (elem.Attribute("api") == g_api_name);
 		} else if (tag_stack_test(elem, "name", "type")) {
 			return true;
 		} else {
@@ -463,18 +437,17 @@ class type_visitor :  public XMLVisitor
 	bool VisitExit(const XMLElement &elem)
 	{
 		if (tag_test(elem, "type") && m_type_name != NULL) {
-			m_api.m_types[m_type_name] = m_type_decl;
+			g_types[m_type_name] = m_type_decl;
 		}
 		return true;
 	}
 public:
-	type_visitor(api &api) : m_api(api), m_type_name(NULL) {}
+	type_visitor() : m_type_name(NULL) {}
 };
 
 class khronos_registry_visitor : public XMLVisitor
 {
 	XMLDocument &m_doc;
-	api &m_api;
 
 	bool VisitEnter(const XMLElement &elem, const XMLAttribute *attrib)
 	{
@@ -487,60 +460,60 @@ class khronos_registry_visitor : public XMLVisitor
 		} else if (tag_stack_test(elem, "types", "registry")) {
 			return true;
 		} else if (tag_stack_test(elem, "enums", "registry")) {
-			enumeration_visitor e(elem, m_api);
+			enumeration_visitor e(elem);
 			enumeration *enumeration = e.build();
 			if (enumeration) {
-				m_api.m_enumerations.push_back(enumeration);
+				g_enumerations.push_back(enumeration);
 			}
 			return false;
 		} else if (tag_stack_test(elem, "feature", "registry")) {
 			const char *supported = elem.Attribute("api");
-			if (!strcmp(supported, m_api.m_name)) {
+			if (!strcmp(supported, g_api_name)) {
 				interface *feature = new interface();
 				float version = elem.FloatAttribute("number");
-				m_api.m_feature_interfaces[(int)roundf(version*10)] = feature;
-				interface_visitor i_visitor(m_api, elem, feature);
+				g_feature_interfaces[(int)roundf(version*10)] = feature;
+				interface_visitor i_visitor(elem, feature);
 				elem.Accept(&i_visitor);
 			}
 			return false;
 		} else if (tag_stack_test(elem, "extension", "extensions")) {
-			const char *api_variant_name = m_api.m_variant_name;
+			const char *api_variant_name = g_variant_name;
 			const char *supported = elem.Attribute("supported");
 			char *supported_copy = strdup(supported);
 			char *saveptr;
 			char *token = strtok_r(supported_copy, "|", &saveptr);
-			const char *name = elem.Attribute("name") + strlen(m_api.name()) + 1;
+			const char *name = elem.Attribute("name") + strlen(g_api_name) + 1;
 
 			//We can't support SGI extensions due to missing types
-			if (!strcmp(m_api.m_name, "glx") && (strstr(name, "SGI") == name) && !strstr(name,"swap_control")) {
+			if (!strcmp(g_api_name, "glx") && (strstr(name, "SGI") == name) && !strstr(name,"swap_control")) {
 				return false;
 			}
 
 			//Check if this extension is supported by the target API
 			while (token) {
-				if (!strcmp(token, api_variant_name)) {
+				if (!strcmp(token, g_variant_name)) {
 					break;
 				}
 				token = strtok_r(NULL, "|", &saveptr);
 			}
 			if (token != NULL) {
 				interface *feature = new interface();
-				m_api.m_extension_interfaces[name] = feature;
-				interface_visitor i_visitor(m_api, elem, feature);
+				g_extension_interfaces[name] = feature;
+				interface_visitor i_visitor(elem, feature);
 				elem.Accept(&i_visitor);
 			}
 			return false;
 		} else if (tag_stack_test(elem, "command", "commands")) {
-			command_visitor c(elem, m_api);
+			command_visitor c(elem);
 			command * command = c.build();
 			if (command) {
 				while(command->type_decl.size() > 0 && command->type_decl[command->type_decl.size() - 1] == ' ')
 					command->type_decl.resize(command->type_decl.size() - 1);
-				m_api.m_commands[command->name] = command;
+				g_commands[command->name] = command;
 			}
 			return false;
 		} else if (tag_stack_test(elem, "type", "types")) {
-			type_visitor t(m_api);
+			type_visitor t;
 			elem.Accept(&t);
 			return false;
 		} else {
@@ -548,12 +521,12 @@ class khronos_registry_visitor : public XMLVisitor
 		}
 	}
 public:
-	khronos_registry_visitor(XMLDocument &doc, api &api) : m_doc(doc), m_api(api) { }
+	khronos_registry_visitor(XMLDocument &doc) : m_doc(doc) { }
 };
 
 void interface::print_declaration(FILE *header_file)
 {
-	const char *enumeration_prefix = g_api->m_enumeration_prefix;
+	const char *enumeration_prefix = g_enumeration_prefix;
 
 	FOREACH(val, types, types_type) {
 		char *temp = strdup(val->first);
@@ -575,20 +548,20 @@ void interface::print_declaration(FILE *header_file)
 	FOREACH (val, enums, enums_type)
 		fprintf(header_file, "#define %s%s 0x%x\n",
 				enumeration_prefix, *val,
-				g_api->m_enum_map[*val]);
+				g_enum_map[*val]);
 
 	indent_fprintf(header_file, "\n");
 	FOREACH (iter, removed_commands, commands_type) {
 		command *command = iter->second;
 		fprintf(header_file, "#undef %s%s\n",
-				g_api->m_command_prefix, command->name);
+				g_command_prefix, command->name);
 	}
 	FOREACH (iter, commands, commands_type) {
 		command *command = iter->second;
 		fprintf(header_file, "#define %s%s _%s_%s%s\n",
-				g_api->m_command_prefix, command->name,
-				g_prefix, g_api->m_command_prefix, command->name);
-		command->print_declare(header_file, g_api->m_command_prefix);
+				g_command_prefix, command->name,
+				g_prefix, g_command_prefix, command->name);
+		command->print_declare(header_file, g_command_prefix);
 	}
 }
 
@@ -596,13 +569,13 @@ void interface::print_definition(FILE *source_file)
 {
 	indent_fprintf(source_file, "\n");
 	FOREACH (iter, commands, commands_type)
-		iter->second->print_initialize(source_file, g_api->m_command_prefix);
+		iter->second->print_initialize(source_file, g_command_prefix);
 }
 
 void interface::include_type(const char *type)
 {
 	if (type != NULL && !g_common_gl_typedefs.count(type) && !types.count(type)) {
-		types[type] = g_api->m_types[type];
+		types[type] = g_types[type];
 	}
 }
 
@@ -632,7 +605,7 @@ void interface::print_load_check(FILE *source_file)
 	if (!commands.size()) {
 		fprintf(source_file, "true");
 	} else {
-		const char *command_prefix = g_api->m_command_prefix;
+		const char *command_prefix = g_command_prefix;
 		int i = 0;
 		FOREACH (iter,  commands, commands_type) {
 			if ((i % 3) == 2) {
@@ -647,14 +620,14 @@ void interface::print_load_check(FILE *source_file)
 	}
 }
 
-void api::bindify(const char *header_name, int min_version, FILE *header_file , FILE *source_file)
+void bindify(const char *header_name, int min_version, FILE *header_file , FILE *source_file)
 {
 	interface full_interface;
 	interface core_3_2;
 	int max_version = min_version;
 
-	bool is_gl_api = !strcmp(m_name, "gl");
-	FOREACH (iter, m_feature_interfaces, feature_interfaces_type) {
+	bool is_gl_api = !strcmp(g_api_name, "gl");
+	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first > min_version)
 			iter->second->resolve_types();
 		else
@@ -662,23 +635,23 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		max_version = iter->first > max_version ? iter->first : max_version;
 		full_interface.append(*(iter->second));
 	}
-	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
+	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
 		iter->second->resolve_types();
 		full_interface.append(*(iter->second));
 	}
 	core_3_2.resolve_types();
 
-	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", m_name);
-	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", m_name);
+	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", g_api_name);
+	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", g_api_name);
 
 	fprintf(header_file, "#ifdef __cplusplus\n");
 	fprintf(header_file, "extern \"C\" {\n");
 	fprintf(header_file, "#endif\n");
 
-	if (!strcmp(m_name, "glx")) {
+	if (!strcmp(g_api_name, "glx")) {
 		fprintf(header_file, "#include <X11/Xlib.h>\n");
 		fprintf(header_file, "#include <X11/Xutil.h>\n");
-	} else if (!strcmp(m_name, "wgl")) {
+	} else if (!strcmp(g_api_name, "wgl")) {
 		fprintf(header_file, "#include <windows.h>\n");
 	}
 	fprintf(header_file, "#include <stdint.h>\n");
@@ -706,19 +679,19 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	indent_fprintf(header_file, "typedef ptrdiff_t GLintptr;\n");
 	indent_fprintf(header_file, "typedef ptrdiff_t GLsizeiptr;\n");
 	indent_fprintf(header_file, "#endif\n");
-	indent_fprintf(header_file, "#ifndef %s_%sVERSION\n", g_macro_prefix, m_enumeration_prefix);
-	indent_fprintf(header_file, "#define %s_%sVERSION %d\n", g_macro_prefix, m_enumeration_prefix, min_version);
+	indent_fprintf(header_file, "#ifndef %s_%sVERSION\n", g_macro_prefix, g_enumeration_prefix);
+	indent_fprintf(header_file, "#define %s_%sVERSION %d\n", g_macro_prefix, g_enumeration_prefix, min_version);
 	indent_fprintf(header_file, "#endif\n");
 
 	core_3_2.print_declaration(header_file);
-	FOREACH (iter, m_feature_interfaces, feature_interfaces_type) {
+	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first > min_version) {
 			indent_fprintf(header_file, "\n");
 			indent_fprintf(header_file, "#if defined(%s_%sVERSION) && %s_%sVERSION >= %d\n",
 					g_macro_prefix,
-					m_enumeration_prefix,
+					g_enumeration_prefix,
 					g_macro_prefix,
-					m_enumeration_prefix,
+					g_enumeration_prefix,
 					iter->first);
 			indent_fprintf(header_file, "\n");
 			iter->second->print_declaration(header_file);
@@ -727,16 +700,16 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	}
 
 	indent_fprintf(header_file, "\n");
-	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
+	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
 		indent_fprintf(header_file, "\n");
-		indent_fprintf(header_file, "#if defined(%s_ENABLE_%s%s)\n", g_macro_prefix, m_enumeration_prefix, iter->first);
-		indent_fprintf(header_file, "extern bool %s_%s%s;\n", g_macro_prefix, m_enumeration_prefix, iter->first);
+		indent_fprintf(header_file, "#if defined(%s_ENABLE_%s%s)\n", g_macro_prefix, g_enumeration_prefix, iter->first);
+		indent_fprintf(header_file, "extern bool %s_%s%s;\n", g_macro_prefix, g_enumeration_prefix, iter->first);
 		iter->second->print_declaration(header_file);
 		indent_fprintf(header_file, "#endif\n");
 	}
 
 	indent_fprintf(header_file, "\n");
-	indent_fprintf(header_file, "bool %s_%s_init(int maj, int min);\n",  g_prefix, m_variant_name);
+	indent_fprintf(header_file, "bool %s_%s_init(int maj, int min);\n",  g_prefix, g_variant_name);
 
 	indent_fprintf(header_file, "\n");
 	fprintf(header_file, "#ifdef __cplusplus\n");
@@ -761,10 +734,10 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	fprintf(source_file, "\telse return (PROC)GetProcAddress(GetModuleHandleA(\"OpenGL32.dll\"), (LPCSTR)name);\n");
 	fprintf(source_file, "}\n");
 	fprintf(source_file, "#endif\n");
-	fprintf(source_file, "#define %s_%sVERSION %d\n", g_macro_prefix, m_enumeration_prefix, max_version);
+	fprintf(source_file, "#define %s_%sVERSION %d\n", g_macro_prefix, g_enumeration_prefix, max_version);
 
-	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-		indent_fprintf(source_file, "#define %s_ENABLE_%s%s\n", g_macro_prefix, m_enumeration_prefix, iter->first);
+	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
+		indent_fprintf(source_file, "#define %s_ENABLE_%s%s\n", g_macro_prefix, g_enumeration_prefix, iter->first);
 	}
 
 	fprintf(source_file, "#include \"%s\"\n", header_name);
@@ -772,8 +745,8 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	full_interface.print_definition(source_file);
 
 	indent_fprintf(source_file, "\n");
-	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-		indent_fprintf(source_file, "bool %s_%s%s = false;\n", g_macro_prefix, m_enumeration_prefix, iter->first);
+	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
+		indent_fprintf(source_file, "bool %s_%s%s = false;\n", g_macro_prefix, g_enumeration_prefix, iter->first);
 	}
 
 #if HAVE_GPERF
@@ -794,9 +767,9 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 			FILE *gperf_in = fdopen(fdpair[1], "w");
 			fprintf(gperf_in, "struct extension_match { const char *name; bool *support_flag; };\n");
 			fprintf(gperf_in, "\%\%\%\%\n");
-			FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-				fprintf(gperf_in, "%s%s, &%s_%s%s\n", m_enumeration_prefix, iter->first,
-					g_macro_prefix, m_enumeration_prefix, iter->first);
+			FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
+				fprintf(gperf_in, "%s%s, &%s_%s%s\n", g_enumeration_prefix, iter->first,
+					g_macro_prefix, g_enumeration_prefix, iter->first);
 			}
 			fflush(gperf_in);
 			close(fdpair[1]);
@@ -811,7 +784,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 #endif
 
 	indent_fprintf(source_file, "\n");
-	indent_fprintf(source_file, "bool %s_%s_init(int maj, int min)\n", g_prefix, m_variant_name);
+	indent_fprintf(source_file, "bool %s_%s_init(int maj, int min)\n", g_prefix, g_variant_name);
 	indent_fprintf(source_file, "{\n");
 	increase_indent();
 	indent_fprintf(source_file, "int req_version = maj * 10 + min;\n");
@@ -823,7 +796,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	indent_fprintf(source_file, "if (req_version > %d) return false;\n", max_version);
 
 	FOREACH (iter, full_interface.commands, interface::commands_type)
-		(iter->second)->print_load(source_file, m_command_prefix);
+		(iter->second)->print_load(source_file, g_command_prefix);
 
 	if (is_gl_api) {
 		indent_fprintf(source_file, "\n");
@@ -840,9 +813,9 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		indent_fprintf(source_file, "\tif (match)\n");
 		indent_fprintf(source_file, "\t\t*match->support_flag = true;\n");
 #else
-		FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
-			indent_fprintf(source_file, "\tif (!strcmp(extname, \"%s%s\")) {\n", m_enumeration_prefix, iter->first);
-			indent_fprintf(source_file, "\t\t%s_%s%s = true;\n", g_macro_prefix, m_enumeration_prefix, iter->first);
+		FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
+			indent_fprintf(source_file, "\tif (!strcmp(extname, \"%s%s\")) {\n", g_enumeration_prefix, iter->first);
+			indent_fprintf(source_file, "\t\t%s_%s%s = true;\n", g_macro_prefix, g_enumeration_prefix, iter->first);
 			indent_fprintf(source_file, "\t\tcontinue;\n");
 			indent_fprintf(source_file, "\t}\n");
 		}
@@ -850,12 +823,12 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 		indent_fprintf(source_file, "}\n");
 	}
 
-	FOREACH (iter, m_extension_interfaces, extension_interfaces_type) {
+	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
 		if (iter->second->commands.size()) {
 			indent_fprintf(source_file, "\n");
 			indent_fprintf(source_file, "%s_%s%s = %s_%s%s && ",
-					g_macro_prefix, m_enumeration_prefix, iter->first,
-					g_macro_prefix, m_enumeration_prefix, iter->first);
+					g_macro_prefix, g_enumeration_prefix, iter->first,
+					g_macro_prefix, g_enumeration_prefix, iter->first);
 			increase_indent();
 			iter->second->print_load_check(source_file);
 			decrease_indent();
@@ -867,7 +840,7 @@ void api::bindify(const char *header_name, int min_version, FILE *header_file , 
 	indent_fprintf(source_file, "return ");
 	core_3_2.print_load_check(source_file);
 
-	FOREACH(iter, m_feature_interfaces, feature_interfaces_type) {
+	FOREACH(iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first <= min_version || !iter->second->commands.size())
 			continue;
 		fprintf(source_file, "\n");
@@ -922,8 +895,8 @@ int main(int argc, char **argv)
 		{"help"      , 0, 0, 'h' }
 	};
 
-	const char *api_name = "gl";
-	const char *api_variant_name = "glcore";
+	g_api_name = "gl";
+	g_variant_name = "glcore";
 	const char *srcdir = NULL;
 
 	const char *prefix = "glb";
@@ -942,11 +915,11 @@ int main(int argc, char **argv)
 			exit(-1);
 			break;
 		case 'a':
-			api_name = optarg;
-			if (!strcmp(api_name, "gl")) {
-				api_variant_name = "glcore";
+			g_api_name = optarg;
+			if (!strcmp(g_api_name, "gl")) {
+				g_variant_name = "glcore";
 			} else {
-				api_variant_name = api_name;
+				g_variant_name = g_api_name;
 			}
 			break;
 		case 's':
@@ -970,22 +943,30 @@ int main(int argc, char **argv)
 	g_prefix = prefix;
 	g_macro_prefix = macro_prefix;
 
-	printf("Generating bindings for %s with namespace '%s'\n", api_name, g_prefix);
-	api api(api_name, api_variant_name);
+	printf("Generating bindings for %s with namespace '%s'\n", g_api_name, g_prefix);
 
-	g_api = &api;
+	if (!strcmp(g_api_name,"wgl")) {
+		g_command_prefix = "wgl";
+		g_enumeration_prefix = "WGL_";
+	} else if (!strcmp(g_api_name,"glx")) {
+		g_command_prefix = "glX";
+		g_enumeration_prefix = "GLX_";
+	} else if (!strcmp(g_api_name,"gl")) {
+		g_command_prefix = "gl";
+		g_enumeration_prefix = "GL_";
+	}
 
 	char in_filename[200];
 #ifdef PKGDATADIR
 	if (!srcdir) {
 		srcdir = PKGDATADIR;
 	}
-	snprintf(in_filename, sizeof(in_filename), PKGDATADIR "/%s.xml", api.name());
+	snprintf(in_filename, sizeof(in_filename), PKGDATADIR "/%s.xml", g_api_name);
 #else
 	if (!srcdir) {
 		srcdir = ".";
 	}
-	snprintf(in_filename, sizeof(in_filename), "%s/%s.xml", srcdir, api.name());
+	snprintf(in_filename, sizeof(in_filename), "%s/%s.xml", srcdir, g_api_name);
 #endif
 	err = doc.LoadFile(in_filename);
 	if (err != XML_NO_ERROR) {
@@ -997,11 +978,11 @@ int main(int argc, char **argv)
 	char cpp_name[100];
 	snprintf(header_name, sizeof(header_name), "%s-%s%s",
 		g_prefix,
-		api_variant_name,
+		g_variant_name,
 		".h");
 	snprintf(cpp_name, sizeof(header_name), "%s-%s%s",
 		g_prefix,
-		api_variant_name,
+		g_variant_name,
 		".c");
 
 	FILE *header_file = fopen(header_name, "w");
@@ -1009,15 +990,15 @@ int main(int argc, char **argv)
 
 	printf("Writing bindings to %s and %s\n", cpp_name, header_name);
 
-	khronos_registry_visitor registry_visitor(doc, api);
+	khronos_registry_visitor registry_visitor(doc);
 	doc.Accept(&registry_visitor);
 
-	if (!strcmp(api_name, "gl")) {
-		api.bindify(header_name, 32, header_file, source_file);
-	} else if (!strcmp(api_name, "glx")) {
-		api.bindify(header_name, 14, header_file, source_file);
-	} else if (!strcmp(api_name, "wgl")) {
-		api.bindify(header_name, 10, header_file, source_file);
+	if (!strcmp(g_api_name, "gl")) {
+		bindify(header_name, 32, header_file, source_file);
+	} else if (!strcmp(g_api_name, "glx")) {
+		bindify(header_name, 14, header_file, source_file);
+	} else if (!strcmp(g_api_name, "wgl")) {
+		bindify(header_name, 10, header_file, source_file);
 	}
 
 	return 0;
