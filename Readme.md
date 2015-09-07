@@ -41,8 +41,7 @@ By default the generated header file will only expose functions and enums for th
 Extensions
 ----------
 
-After initializing the bindings you may determine if an extension was successully loaded by checking its corresponding support flag. The support flags are named `GLB_<extension name>`. An extension support flag will be set to true if it's name was found in the driver's extension string *and* all functions for the extension were located. An extension's specific functions and enum values will only be exposed if 
-the macro `GLB_ENABLE_<extension name>` is defined.
+After initializing the bindings you may determine if an extension was successully loaded by checking its corresponding support flag. The support flags are named `GLB_<extension name>`. An extension support flag will be set to true if it's name was found in the driver's extension string *and* all functions for the extension were located. An extension's specific functions and enum values will only be exposed if the macro `GLB_ENABLE_<extension name>` is defined before `glb-glcore.h` is included.
 
 Example: Checking for the `GL_ARB_texture_storage` extension
 
@@ -59,8 +58,8 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 Binding namespace
 -----------------
 
-If desired the default `glb` namespace of the generated inteface can be changed on the command line using the `-n` flag. If used, all instances of `glb` above
-will be changed to the selected namespace and all instances of `GLB` will be replaced with the upper case version of the namespace.
+The default `glb` namespace of the generated inteface can be changed on the command line using the `-n` flag. If used, all instances of `glb` above
+will be changed to the selected namespace and all instances of `GLB` will be replaced with the upper case version of the selected namespace.
 
 Example: Generate C bindings for OpenGL with a `myapp` namespace
 
@@ -78,7 +77,7 @@ Example: Using C bindings with a `myapp` namespace
 Building
 ------------
 
-glbindify's only dependency is a C++ compiler. If `gperf` is available glbindify will search generate a perfect hash map for extension checking at initialization time. On any UNIX-like system it can be built and installed with it's autotools build system:
+To build glbindify you need a C++98 compatible compiler and a UNIX-like environment. The generated bindings will work on Windows or Linux regardless of what system glbindify was generated or run on. If `gperf` is available glbindify will search generate a perfect hash map for extension checking at initialization time. It can be built and installed with it's autotools build system:
 
 	./autogen.sh
 	./configure <options>
