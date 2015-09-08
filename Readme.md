@@ -75,15 +75,19 @@ Example: Using C bindings with a `myapp` namespace
 	glDrawArrays(...);
 
 Building
-------------
+--------
 
-To build glbindify you need a C++98 compatible compiler and a UNIX-like environment. The generated bindings will work on Windows or Linux regardless of what system glbindify was generated or run on. If `gperf` is available glbindify will search generate a perfect hash map for extension checking at initialization time. It can be built and installed with it's autotools build system:
+`glbindify` requires only a C++98 compatible compiler to build. `glbindify` is known to build on GNU/Linux and Windows. On UNIX-like systems if `gperf` is available glbindify will generate a perfect hash map for extension checking at initialization time.
+
+On UNIX-like systems `glbindify` can be built with its autotools build system:
 
 	./autogen.sh
 	./configure <options>
 	make
 	make install
 
-It can also be built without the build system just by compiling the sources with default options. For example:
+On Windows `glbindify` can be built with the Visual Studio solution file in the `windows` folder. The resulting executable must be run from the top level source directory.
+
+The generated bindings will work on any supported platform regardless of build system. `glbindify` can also be built without the build system by compiling the sources with default options. For example:
 
 	g++ glbindify.cpp tinyxml2.cpp -o glbindify
