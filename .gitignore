@@ -51,3 +51,11 @@ config.h.in
 
 libtool
 ltmain.sh
+
+#windows
+windows/x86/Debug
+windows/x86/Release
+windows/x64/Debug
+windows/x64/Release
+windows/*.sdf
+windows/*.opensdf

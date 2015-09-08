@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <getopt.h>
 
 #include <iostream>
 #include <vector>
@@ -13,6 +12,13 @@
 #include <stdio.h>
 
 #include <errno.h>
+
+#if defined(_WIN32)
+#define strdup _strdup
+#include "getopt.h"
+#else
+#include <getopt.h>
+#endif
 
 #include "tinyxml2.h"
 
@@ -480,8 +486,7 @@ class khronos_registry_visitor : public XMLVisitor
 			const char *api_variant_name = g_variant_name;
 			const char *supported = elem.Attribute("supported");
 			char *supported_copy = strdup(supported);
-			char *saveptr;
-			char *token = strtok_r(supported_copy, "|", &saveptr);
+			char *token = strtok(supported_copy, "|");
 			const char *name = elem.Attribute("name") + strlen(g_api_name) + 1;
 
 			//We can't support SGI extensions due to missing types
@@ -494,7 +499,7 @@ class khronos_registry_visitor : public XMLVisitor
 				if (!strcmp(token, g_variant_name)) {
 					break;
 				}
-				token = strtok_r(NULL, "|", &saveptr);
+				token = strtok(NULL, "|");
 			}
 			if (token != NULL) {
 				interface *feature = new interface();
