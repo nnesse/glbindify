@@ -3,7 +3,7 @@ glbindify
 
 glbindify is a command line tool that generates C bindings for OpenGL, WGL, and GLX.  The generated bindings can then be included in your projects, eliminating the need to link to a seperate loader library. The bindings are generated using XML API specifications mainained by khronos so only these XML files need to be updated to support new GL versions or extensions.
 
-It supports generating bindings for core profile contexts only which substantially reduces the size of the bindings. Also the generated header file only exposes functions and enums for API versions and extensions you select at compile time, ensuring that your application does not accidentally aquire unwanted dependencies.
+It supports generating bindings for core profile contexts only which substantially reduces the size of the bindings. The generated header file only exposes functions and enums for API versions and extensions you select at compile time, ensuring that your application does not accidentally aquire unwanted dependencies.
 
 Command line usage
 ------------------
@@ -36,7 +36,7 @@ Example:
 Targeting specific versions
 ---------------------------
 
-By default the generated header file will only expose functions and enums for the minimum version supported by `glbindify`. For GL the minimum version is 3.2 core profile, for GLX it is 1.4, and for WGL it is 1.0. To access functionality for later versions you must define a macro `GLB_<API>_VERSION` as an integer `(major_version * 10) + minor_version` where `<API>` is the name of the API in all caps.
+By default the generated header file will only expose functions and enums for the minimum version supported by `glbindify`. For OpenGL the minimum version is 3.2 core profile, for GLX it is 1.4, and for WGL it is 1.0. To access functionality for later versions you must define a macro `GLB_<API>_VERSION` as an integer `(major_version * 10) + minor_version` where `<API>` is the name of the API in all caps.
 
 Extensions
 ----------
@@ -58,14 +58,14 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 Binding namespace
 -----------------
 
-The default `glb` namespace of the generated inteface can be changed on the command line using the `-n` flag. If used, all instances of `glb` above
+The naming of functions and macros in the bindings can be changed by passing a `-n` option to `glbindify`. When used, all instances of `glb` above
 will be changed to the selected namespace and all instances of `GLB` will be replaced with the upper case version of the selected namespace.
 
-Example: Generate C bindings for OpenGL with a `myapp` namespace
+Example: Generating C bindings for OpenGL with a `myapp` namespace
 
 	`glbindify -a gl -n myapp`
 	
-Example: Using C bindings with a `myapp` namespace
+Example: Using bindings with a `myapp` namespace
 
 	#include "myapp-glcore.h"
 	...
@@ -86,8 +86,8 @@ On UNIX-like systems `glbindify` can be built with its autotools build system:
 	make
 	make install
 
-On Windows `glbindify` can be built with the Visual Studio solution file in the `windows` folder. The resulting executable must be run from the top level source directory.
+On Windows `glbindify` can be built with the Visual Studio solution file in the `windows` folder. Note that the resulting executable must be run from the top level source directory.
 
-The generated bindings will work on any supported platform regardless of build system. `glbindify` can also be built without the build system by compiling the sources with default options. For example:
+The generated bindings will work on any supported platform regardless of the system they were built on. `glbindify` can also be built without the build system by compiling the sources with default options. For example:
 
 	g++ glbindify.cpp tinyxml2.cpp -o glbindify
