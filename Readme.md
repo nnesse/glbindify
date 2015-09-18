@@ -8,11 +8,11 @@ It supports generating bindings for core profile contexts only which substantial
 Command line usage
 ------------------
 
-To generate bindings just specify the API name to `glbindify` where the API name is one of `gl`, `wgl`, or `glx`. The tool will generate a source file and header file for the API in the current directory with the named `glb-<api>.c` and `glb-<api>.h`.
+To generate bindings just specify the API name to `glbindify` where the API name is one of `gl`, `wgl`, or `glx`. The tool will generate a source file and header file for the API in the current directory with the names `glb-<api>.c` and `glb-<api>.h`.
 
 Example: Generate C bindings for OpenGL core profile contexts
 
-`glbindify -a gl`
+	glbindify -a gl
 
 Using the bindings
 ------------------
@@ -22,7 +22,7 @@ After you have created your OpenGL context and made it current you must call
 `bool glb_<api>_init(int major_version, int minor_version)`
 
 
-where `<api>` is one of `glcore`, `wgl`, or `glx`. If all functions for the requested version, excluding extensions, were found `glb_<api>_init()` will return `true`. Since glbindify mangles the GL function names with '#define' macros you must avoid including system OpenGL headers in files that also include the bindings.
+where `<api>` is one of `glcore`, `wgl`, or `glx`. If all functions for the requested version, excluding extensions, were found `glb_<api>_init()` will return `true`. Since glbindify mangles the GL function names with macros you must avoid including system OpenGL headers in files that also include the bindings.
 
 Example:
 
@@ -63,7 +63,7 @@ will be changed to the selected namespace and all instances of `GLB` will be rep
 
 Example: Generating C bindings for OpenGL with a `myapp` namespace
 
-	`glbindify -a gl -n myapp`
+	glbindify -a gl -n myapp
 	
 Example: Using bindings with a `myapp` namespace
 
@@ -77,7 +77,7 @@ Example: Using bindings with a `myapp` namespace
 Building
 --------
 
-`glbindify` requires only a C++98 compatible compiler to build. `glbindify` is known to build on GNU/Linux and Windows. On UNIX-like systems if `gperf` is available glbindify will generate a perfect hash map for extension checking at initialization time.
+`glbindify` requires only a C++98 compatible compiler to build and is known to build on GNU/Linux and Windows. On UNIX-like systems if `gperf` is available glbindify will generate a perfect hash map for extension checking at initialization time.
 
 On UNIX-like systems `glbindify` can be built with its autotools build system:
 
