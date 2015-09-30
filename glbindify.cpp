@@ -24,6 +24,8 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
+#else
+#define PACKAGE_VERSION "<unknown>"
 #endif
 
 #if HAVE_GPERF
@@ -874,7 +876,8 @@ static void print_help(const char *program_name)
 	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
 	       "  -n,--namespace <Namespace>         Namespace for generated bindings. This is the first\n"
 	       "                                     part of the name of every function and macro.\n"
-	       "  -s,--srcdir <dir>                  Directory to find XML sources\n");
+	       "  -s,--srcdir <dir>                  Directory to find XML sources\n"
+	       "  -v,--version                       Print version information\n");
 }
 
 int main(int argc, char **argv)
@@ -900,6 +903,7 @@ int main(int argc, char **argv)
 	static struct option options [] = {
 		{"api"       , 1, 0, 'a' },
 		{"srcdir"    , 1, 0, 's' },
+		{"version"    , 1, 0, 'v' },
 		{"namespace" , 1, 0, 'n' },
 		{"help"      , 0, 0, 'h' }
 	};
@@ -913,7 +917,7 @@ int main(int argc, char **argv)
 
 	while (1) {
 		int option_index;
-		int c = getopt_long(argc, argv, "a:s:n:", options, &option_index);
+		int c = getopt_long(argc, argv, "a:s:n:v", options, &option_index);
 		if (c == -1) {
 			break;
 		}
@@ -922,6 +926,10 @@ int main(int argc, char **argv)
 		case ':':
 			print_help(argv[0]);
 			exit(-1);
+			break;
+		case 'v':
+			printf("glbindify version %s\n", PACKAGE_VERSION);
+			exit(0);
 			break;
 		case 'a':
 			g_api_name = optarg;
