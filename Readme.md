@@ -41,7 +41,7 @@ By default the generated header file will only expose functions and enums for th
 Extensions
 ----------
 
-After initializing the bindings you may determine if an extension was successully loaded by checking its corresponding support flag. The support flags are named `GLB_<extension name>`. An extension support flag will be set to true if it's name was found in the driver's extension string *and* all functions for the extension were located. An extension's specific functions and enum values will only be exposed if the macro `GLB_ENABLE_<extension name>` is defined before `glb-glcore.h` is included.
+After initializing the bindings you may determine if an extension was successully loaded by checking its corresponding support flag. The support flags are named `GLB_<extension name>`. An extension support flag will be set to true if  all functions for the extension were located. For OpenGL the extension string will also be checked. For WGL and glX the user should additionally check if the extension is supported on the specific screen or device context they are using. An extension's specific functions and enum values will only be exposed if the macro `GLB_ENABLE_<extension name>` is defined before `glb-glcore.h` is included.
 
 Example: Checking for the `GL_ARB_texture_storage` extension
 

@@ -751,7 +751,11 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 
 	indent_fprintf(source_file, "\n");
 	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
-		indent_fprintf(source_file, "bool %s_%s%s = false;\n", g_macro_prefix, g_enumeration_prefix, iter->first);
+		indent_fprintf(source_file, "bool %s_%s%s = %s;\n",
+				g_macro_prefix,
+				g_enumeration_prefix,
+				iter->first,
+				is_gl_api ? "false" : "true");
 	}
 
 #if HAVE_GPERF
