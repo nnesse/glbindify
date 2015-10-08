@@ -630,7 +630,7 @@ void interface::print_load_check(FILE *source_file)
 void bindify(const char *header_name, int min_version, FILE *header_file , FILE *source_file)
 {
 	interface full_interface;
-	interface core_3_2;
+	interface base_interface;
 	int max_version = min_version;
 
 	bool is_gl_api = !strcmp(g_api_name, "gl");
@@ -638,7 +638,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		if (iter->first > min_version)
 			iter->second->resolve_types();
 		else
-			core_3_2.append(*(iter->second));
+			base_interface.append(*(iter->second));
 		max_version = iter->first > max_version ? iter->first : max_version;
 		full_interface.append(*(iter->second));
 	}
@@ -646,7 +646,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		iter->second->resolve_types();
 		full_interface.append(*(iter->second));
 	}
-	core_3_2.resolve_types();
+	base_interface.resolve_types();
 
 	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", g_api_name);
 	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", g_api_name);
@@ -690,7 +690,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	indent_fprintf(header_file, "#define %s_%sVERSION %d\n", g_macro_prefix, g_enumeration_prefix, min_version);
 	indent_fprintf(header_file, "#endif\n");
 
-	core_3_2.print_declaration(header_file);
+	base_interface.print_declaration(header_file);
 	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first > min_version) {
 			indent_fprintf(header_file, "\n");
@@ -849,7 +849,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 
 	indent_fprintf(source_file, "\n");
 	indent_fprintf(source_file, "return ");
-	core_3_2.print_load_check(source_file);
+	base_interface.print_load_check(source_file);
 
 	FOREACH(iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first <= min_version || !iter->second->commands.size())
