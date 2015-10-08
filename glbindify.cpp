@@ -774,22 +774,31 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		}
 		pid_t child_pid = fork();
 		if (child_pid) {
+			int status;
+			pid_t pid;
 			close(fdpair[0]);
 			FILE *gperf_in = fdopen(fdpair[1], "w");
+			fprintf(gperf_in, "%%struct-type\n");
+			fprintf(gperf_in, "%%define lookup-function-name %s_find_extension\n", g_prefix);
+			fprintf(gperf_in, "%%define initializer-suffix ,NULL\n");
 			fprintf(gperf_in, "struct extension_match { const char *name; bool *support_flag; };\n");
-			fprintf(gperf_in, "\%\%\%\%\n");
+			fprintf(gperf_in, "%%%%\n");
 			FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
 				fprintf(gperf_in, "%s%s, &%s_%s%s\n", g_enumeration_prefix, iter->first,
 					g_macro_prefix, g_enumeration_prefix, iter->first);
 			}
 			fflush(gperf_in);
 			close(fdpair[1]);
-			waitpid(child_pid, NULL, 0);
+			pid = waitpid(child_pid, &status, 0);
+			if (pid != child_pid || WEXITSTATUS(status)) {
+				fprintf(stderr, "Error encountered while running gperf\n");
+				exit(-1);
+			}
 		} else {
 			close(fdpair[1]);
 			dup2(fdpair[0], STDIN_FILENO);
 			dup2(fileno(source_file), STDOUT_FILENO);
-			execlp("gperf", "gperf", "-D","-t", "-F", ",NULL", 0);
+			execlp("gperf", "gperf", 0);
 		}
 	}
 #endif
@@ -820,7 +829,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		indent_fprintf(source_file, "for (i = 0; i < num_extensions; i++) {\n");
 		indent_fprintf(source_file, "\tconst char *extname = (const char *)glGetStringi(GL_EXTENSIONS, i);\n");
 #if HAVE_GPERF
-		indent_fprintf(source_file, "\tstruct extension_match *match = in_word_set(extname, strlen(extname));\n");
+		indent_fprintf(source_file, "\tstruct extension_match *match = %s_find_extension(extname, strlen(extname));\n", g_prefix);
 		indent_fprintf(source_file, "\tif (match)\n");
 		indent_fprintf(source_file, "\t\t*match->support_flag = true;\n");
 #else
