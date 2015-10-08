@@ -491,7 +491,7 @@ class khronos_registry_visitor : public XMLVisitor
 			char *token = strtok(supported_copy, "|");
 			const char *name = elem.Attribute("name") + strlen(g_api_name) + 1;
 
-			//We can't support SGI extensions due to missing types
+			//We can't support many SGI extensions due to missing types
 			if (!strcmp(g_api_name, "glx") && (strstr(name, "SGI") == name) && !strstr(name,"swap_control")) {
 				return false;
 			}
@@ -658,6 +658,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	if (!strcmp(g_api_name, "glx")) {
 		fprintf(header_file, "#include <X11/Xlib.h>\n");
 		fprintf(header_file, "#include <X11/Xutil.h>\n");
+		fprintf(header_file, "#define GLX_EXTENSION_NAME \"GLX\"\n");
 	} else if (!strcmp(g_api_name, "wgl")) {
 		fprintf(header_file, "#include <windows.h>\n");
 	}
