@@ -987,7 +987,7 @@ int main(int argc, char **argv)
 	if (!srcdir) {
 		srcdir = PKGDATADIR;
 	}
-	snprintf(in_filename, sizeof(in_filename), PKGDATADIR "/%s.xml", g_api_name);
+	snprintf(in_filename, sizeof(in_filename), "%s/%s.xml", srcdir, g_api_name);
 #else
 	if (!srcdir) {
 		srcdir = ".";
