@@ -207,7 +207,7 @@ bool is_enum_in_namespace(const char **name)
 {
 	if (!strcmp(*name, "GLX_EXTENSION_NAME")) {
 		return false;
-	} else if (strstr(*name, g_enumeration_prefix)) {
+	} else if (strstr(*name, g_enumeration_prefix) == *name) {
 		*name = *name + strlen(g_enumeration_prefix);
 		return true;
 	} else {
