@@ -205,7 +205,9 @@ bool is_command_in_namespace(const char **name)
 
 bool is_enum_in_namespace(const char **name)
 {
-	if (strstr(*name, g_enumeration_prefix)) {
+	if (!strcmp(*name, "GLX_EXTENSION_NAME")) {
+		return false;
+	} else if (strstr(*name, g_enumeration_prefix)) {
 		*name = *name + strlen(g_enumeration_prefix);
 		return true;
 	} else {
@@ -341,17 +343,17 @@ class enumeration_visitor : public data_builder_visitor<enumeration>
 			if (elem.Attribute("api") && strcmp(elem.Attribute("api"), g_api_name))
 				return false;
 			unsigned int val = 0xffffffff;
-			int ret = sscanf(elem.Attribute("value"), "0x%x", &val);
-			if (ret != 1)
-				ret = sscanf(elem.Attribute("value"), "%d", &val);
 			const char *enumeration_name = elem.Attribute("name");
-			if (ret == 1) {
-				if (is_enum_in_namespace(&enumeration_name)) {
+			if (is_enum_in_namespace(&enumeration_name)) {
+				int ret = sscanf(elem.Attribute("value"), "0x%x", &val);
+				if (ret != 1)
+					ret = sscanf(elem.Attribute("value"), "%d", &val);
+				if (ret == 1) {
 					m_data->enum_map[enumeration_name] = val;
 					g_enum_map[enumeration_name] = val;
+				} else {
+					printf("warning: can't parse value of enum %s: \"%s\"\n", elem.Attribute("name"), elem.Attribute("value"));
 				}
-			} else {
-				printf("warning: can't parse value of enum %s: \"%s\"\n", elem.Attribute("name"), elem.Attribute("value"));
 			}
 		}
 		return false;

@@ -201,6 +201,10 @@ typedef unsigned __int64 uint64_t;
 
     <!-- SECTION: GLX enumerant (token) definitions. -->
 
+    <enums namespace="GLXStrings">
+        <enum value="&quot;GLX&quot;"  name="GLX_EXTENSION_NAME" comment="This is modest abuse of the enum tag mechanism, maybe a string tag?"/>
+    </enums>
+
     <!-- Bitmasks each have their own namespace, as do a few other
          categories of enumeration -->
 
