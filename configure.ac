@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT(glbindify, [0.3.2])
+AC_INIT(glbindify, [0.3.3])
 
 AC_CANONICAL_SYSTEM
 AM_INIT_AUTOMAKE([foreign])

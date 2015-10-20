@@ -8,6 +8,7 @@
 #include <fstream>
 #include <stdio.h>
 #include <math.h>
+#include <errno.h>
 
 #include <stdio.h>
 
@@ -999,25 +1000,34 @@ int main(int argc, char **argv)
 #endif
 	err = doc.LoadFile(in_filename);
 	if (err != XML_NO_ERROR) {
-		printf("Error loading khronos registry file %s\n", in_filename);
+		fprintf(stderr, "Error loading khronos registry file %s\n", in_filename);
 		exit(-1);
 	}
 
 	char header_name[100];
-	char cpp_name[100];
+	char c_name[100];
 	snprintf(header_name, sizeof(header_name), "%s-%s%s",
 		g_prefix,
 		g_variant_name,
 		".h");
-	snprintf(cpp_name, sizeof(header_name), "%s-%s%s",
+	snprintf(c_name, sizeof(c_name), "%s-%s%s",
 		g_prefix,
 		g_variant_name,
 		".c");
 
-	FILE *header_file = fopen(header_name, "w");
-	FILE *source_file = fopen(cpp_name, "w");
+	FILE *header_file = fopen(header_name, "w+");
+	if (!header_file) {
+		fprintf(stderr, "Error creating header file '%s': %s\n", header_name, strerror(errno));
+		exit(-1);
+	}
 
-	printf("Writing bindings to %s and %s\n", cpp_name, header_name);
+	FILE *source_file = fopen(c_name, "w+");
+	if (!source_file) {
+		fprintf(stderr, "Error creating source file '%s': %s\n", c_name, strerror(errno));
+		exit(-1);
+	}
+
+	printf("Writing bindings to %s and %s\n", c_name, header_name);
 
 	khronos_registry_visitor registry_visitor(doc);
 	doc.Accept(&registry_visitor);
@@ -1029,6 +1039,9 @@ int main(int argc, char **argv)
 	} else if (!strcmp(g_api_name, "wgl")) {
 		bindify(header_name, 10, header_file, source_file);
 	}
+
+	fclose(source_file);
+	fclose(header_file);
 
 	return 0;
 }
