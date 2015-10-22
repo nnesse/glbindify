@@ -116,7 +116,7 @@ struct command {
 	};
 	std::vector<param> params;
 	void print_declare(FILE *out, const char *command_prefix) {
-		indent_fprintf(out, "extern %s (*%s%s)(", type_decl.c_str(), command_prefix, name);
+		indent_fprintf(out, "extern %s (*%s%s_bind)(", type_decl.c_str(), command_prefix, name);
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(unsigned int i = 1; i < params.size(); i++) {
@@ -124,9 +124,25 @@ struct command {
 			}
 		}
 		fprintf(out, ");\n");
+		indent_fprintf(out, "extern %s (*%s%s_cb)(", type_decl.c_str(), command_prefix, name);
+		if (params.size()) {
+			fprintf(out, "%s", params[0].decl.c_str());
+			for (unsigned int i = 1; i < params.size(); i++) {
+				fprintf(out, ", %s", params[i].decl.c_str());
+			}
+		}
+		fprintf(out, ");\n");
+		indent_fprintf(out, "%s %s%s(", type_decl.c_str(), command_prefix, name);
+		if (params.size()) {
+			fprintf(out, "%s", params[0].decl.c_str());
+			for (unsigned int i = 1; i < params.size(); i++) {
+				fprintf(out, ", %s", params[i].decl.c_str());
+			}
+		}
+		fprintf(out, ");\n");
 	}
-	void print_initialize(FILE *out, const char *command_prefix) {
-		indent_fprintf(out, "%s (*%s%s)(", type_decl.c_str(), command_prefix, name);
+	void print_define(FILE *out, const char *command_prefix) {
+		indent_fprintf(out, "%s (*%s%s_bind)(", type_decl.c_str(), command_prefix, name);
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(unsigned int i = 1; i < params.size(); i++) {
@@ -134,10 +150,54 @@ struct command {
 			}
 		}
 		fprintf(out, ") = NULL;\n");
+		indent_fprintf(out, "%s (*%s%s_cb)(", type_decl.c_str(), command_prefix, name);
+		if (params.size()) {
+			fprintf(out, "%s", params[0].decl.c_str());
+			for (unsigned int i = 1; i < params.size(); i++) {
+				fprintf(out, ", %s", params[i].decl.c_str());
+			}
+		}
+		fprintf(out, ") = NULL;\n");
+
+		indent_fprintf(out, "%s %s%s(", type_decl.c_str(), command_prefix, name);
+		if (params.size()) {
+			fprintf(out, "%s %s", params[0].decl.c_str(), params[0].name);
+			for (unsigned int i = 1; i < params.size(); i++) {
+				fprintf(out, ", %s %s", params[i].decl.c_str(), params[i].name);
+			}
+		}
+		fprintf(out, ") {\n");
+		increase_indent();
+
+		indent_fprintf(out, "if (%s%s_cb) %s%s_cb(", command_prefix, name, command_prefix, name);
+		if (params.size()) {
+			fprintf(out, "%s", params[0].name);
+			for (unsigned int i = 1; i < params.size(); i++) {
+				fprintf(out, ", %s", params[i].name);
+			}
+		}
+		fprintf(out, ");\n");
+
+		if (type_decl.size() && type_decl.compare("void")) {
+			indent_fprintf(out, "return ");
+		}else {
+			indent_fprintf(out, "");
+		}
+		fprintf(out, "%s%s_bind(", command_prefix, name);
+		if (params.size()) {
+			fprintf(out, "%s", params[0].name);
+			for (unsigned int i = 1; i < params.size(); i++) {
+				fprintf(out, ", %s", params[i].name);
+			}
+		}
+		fprintf(out, ");\n");
+
+		decrease_indent();
+		indent_fprintf(out, "}\n");
 	}
 
 	void print_load(FILE *out, const char *command_prefix) {
-		indent_fprintf(out, "%s%s = (%s (*)(", command_prefix, name, type_decl.c_str());
+		indent_fprintf(out, "%s%s_bind = (%s (*)(", command_prefix, name, type_decl.c_str());
 		if (params.size()) {
 			fprintf(out, "%s", params[0].decl.c_str());
 			for(unsigned int i = 1; i < params.size(); i++) {
@@ -571,6 +631,12 @@ void interface::print_declaration(FILE *header_file)
 		fprintf(header_file, "#define %s%s _%s_%s%s\n",
 				g_command_prefix, command->name,
 				g_prefix, g_command_prefix, command->name);
+		fprintf(header_file, "#define %s%s_bind _%s_%s%s_bind\n",
+			g_command_prefix, command->name,
+			g_prefix, g_command_prefix, command->name);
+		fprintf(header_file, "#define %s%s_cb _%s_%s%s_cb\n",
+			g_command_prefix, command->name,
+			g_prefix, g_command_prefix, command->name);
 		command->print_declare(header_file, g_command_prefix);
 	}
 }
@@ -579,7 +645,7 @@ void interface::print_definition(FILE *source_file)
 {
 	indent_fprintf(source_file, "\n");
 	FOREACH (iter, commands, commands_type)
-		iter->second->print_initialize(source_file, g_command_prefix);
+		iter->second->print_define(source_file, g_command_prefix);
 }
 
 void interface::include_type(const char *type)
@@ -624,7 +690,7 @@ void interface::print_load_check(FILE *source_file)
 			}
 			if (i)
 				fprintf(source_file, " && ");
-			fprintf(source_file, "%s%s", command_prefix, iter->first);
+			fprintf(source_file, "%s%s_bind", command_prefix, iter->first);
 			i++;
 		}
 	}

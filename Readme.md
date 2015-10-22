@@ -55,6 +55,11 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 		...
 	}
 
+User callbacks
+--------------
+
+For each API entry point glbindify will check if a function pointer named `<api>EntryPoint_cb` is non-zero. If it is non-zero glbindify will call it. The function will have the same signature as the API entry point, making the callback suitable for generating traces or emulating the API.
+
 Binding namespace
 -----------------
 
