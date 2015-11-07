@@ -151,24 +151,16 @@ struct command {
 	command() : name(NULL), type(NULL) {}
 };
 
-struct interface {
-	typedef std::map<const char *, command *, cstring_compare> commands_type;
-	typedef std::set<const char *, cstring_compare> enums_type;
+typedef std::map<const char *, command *, cstring_compare> commands_type;
+typedef std::set<const char *, cstring_compare> enums_type;
+typedef std::map<const char *, std::string, cstring_compare> types_type;
 
+struct interface {
 	enums_type enums;
 	commands_type commands;
 	enums_type removed_enums;
 	commands_type removed_commands;
-
-	typedef std::map<const char *, std::string, cstring_compare> types_type;
 	types_type types;
-
-	void append(const interface &other);
-	void include_type(const char *type);
-	void resolve_types();
-	void print_definition(FILE *header_file);
-	void print_declaration(FILE *header_file);
-	void print_load_check(FILE *source_file);
 };
 
 	//Api description
@@ -536,11 +528,11 @@ public:
 	khronos_registry_visitor(XMLDocument &doc) : m_doc(doc) { }
 };
 
-void interface::print_declaration(FILE *header_file)
+void print_interface_declaration(struct interface *iface, FILE *header_file)
 {
 	const char *enumeration_prefix = g_enumeration_prefix;
 
-	FOREACH(val, types, types_type) {
+	FOREACH(val, iface->types, types_type) {
 		char *temp = strdup(val->first);
 		char *cur;
 		for (cur = temp; *cur; cur++)
@@ -554,21 +546,21 @@ void interface::print_declaration(FILE *header_file)
 	}
 
 	indent_fprintf(header_file, "\n");
-	FOREACH (val, removed_enums, enums_type)
+	FOREACH (val, iface->removed_enums, enums_type)
 		fprintf(header_file, "#undef %s%s\n", enumeration_prefix, *val);
 
-	FOREACH (val, enums, enums_type)
+	FOREACH (val, iface->enums, enums_type)
 		fprintf(header_file, "#define %s%s 0x%x\n",
 				enumeration_prefix, *val,
 				g_enum_map[*val]);
 
 	indent_fprintf(header_file, "\n");
-	FOREACH (iter, removed_commands, commands_type) {
+	FOREACH (iter, iface->removed_commands, commands_type) {
 		command *command = iter->second;
 		fprintf(header_file, "#undef %s%s\n",
 				g_command_prefix, command->name);
 	}
-	FOREACH (iter, commands, commands_type) {
+	FOREACH (iter, iface->commands, commands_type) {
 		command *command = iter->second;
 		fprintf(header_file, "#define %s%s _%s_%s%s\n",
 				g_command_prefix, command->name,
@@ -577,49 +569,49 @@ void interface::print_declaration(FILE *header_file)
 	}
 }
 
-void interface::print_definition(FILE *source_file)
+void print_interface_definition(struct interface *iface, FILE *source_file)
 {
 	indent_fprintf(source_file, "\n");
-	FOREACH (iter, commands, commands_type)
+	FOREACH (iter, iface->commands, commands_type)
 		iter->second->print_initialize(source_file, g_command_prefix);
 }
 
-void interface::include_type(const char *type)
+void interface_include_type(struct interface *iface, const char *type)
 {
-	if (type != NULL && !g_common_gl_typedefs.count(type) && !types.count(type)) {
-		types[type] = g_types[type];
+	if (type != NULL && !g_common_gl_typedefs.count(type) && !iface->types.count(type)) {
+		iface->types[type] = g_types[type];
 	}
 }
 
-void interface::resolve_types()
+void interface_resolve_types(struct interface *iface)
 {
-	FOREACH (iter, commands, commands_type) {
+	FOREACH (iter, iface->commands, commands_type) {
 		command *command = iter->second;
-		include_type(command->type);
+		interface_include_type(iface, command->type);
 		for (std::vector<command::param>::iterator iter = command->params.begin(); iter != command->params.end(); iter++) {
-			include_type(iter->type);
+			interface_include_type(iface, iter->type);
 		}
 	}
 }
 
-void interface::append(const interface &other)
+void interface_append(struct interface *iface, const interface &other)
 {
-	enums.insert(other.enums.begin(), other.enums.end());
+	iface->enums.insert(other.enums.begin(), other.enums.end());
 	FOREACH_CONST (e, other.removed_enums, enums_type)
-		enums.erase(*e);
-	commands.insert(other.commands.begin(), other.commands.end());
+		iface->enums.erase(*e);
+	iface->commands.insert(other.commands.begin(), other.commands.end());
 	FOREACH_CONST (iter, other.removed_commands, commands_type)
-		commands.erase(iter->first);
+		iface->commands.erase(iter->first);
 }
 
-void interface::print_load_check(FILE *source_file)
+void print_interface_load_check(struct interface *iface, FILE *source_file)
 {
-	if (!commands.size()) {
+	if (!iface->commands.size()) {
 		fprintf(source_file, "true");
 	} else {
 		const char *command_prefix = g_command_prefix;
 		int i = 0;
-		FOREACH (iter,  commands, commands_type) {
+		FOREACH (iter,  iface->commands, commands_type) {
 			if ((i % 3) == 2) {
 				fprintf(source_file, "\n");
 				indent_fprintf(source_file, "");
@@ -641,17 +633,17 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	bool is_gl_api = !strcmp(g_api_name, "gl");
 	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first > min_version)
-			iter->second->resolve_types();
+			interface_resolve_types(iter->second);
 		else
-			base_interface.append(*(iter->second));
+			interface_append(&base_interface, *(iter->second));
 		max_version = iter->first > max_version ? iter->first : max_version;
-		full_interface.append(*(iter->second));
+		interface_append(&full_interface,*(iter->second));
 	}
 	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
-		iter->second->resolve_types();
-		full_interface.append(*(iter->second));
+		interface_resolve_types(iter->second);
+		interface_append(&full_interface, *(iter->second));
 	}
-	base_interface.resolve_types();
+	interface_resolve_types(&base_interface);
 
 	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", g_api_name);
 	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", g_api_name);
@@ -696,7 +688,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	indent_fprintf(header_file, "#define %s_%sVERSION %d\n", g_macro_prefix, g_enumeration_prefix, min_version);
 	indent_fprintf(header_file, "#endif\n");
 
-	base_interface.print_declaration(header_file);
+	print_interface_declaration(&base_interface, header_file);
 	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first > min_version) {
 			indent_fprintf(header_file, "\n");
@@ -707,7 +699,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 					g_enumeration_prefix,
 					iter->first);
 			indent_fprintf(header_file, "\n");
-			iter->second->print_declaration(header_file);
+			print_interface_declaration(iter->second, header_file);
 			indent_fprintf(header_file, "#endif\n");
 		}
 	}
@@ -717,7 +709,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		indent_fprintf(header_file, "\n");
 		indent_fprintf(header_file, "#if defined(%s_ENABLE_%s%s)\n", g_macro_prefix, g_enumeration_prefix, iter->first);
 		indent_fprintf(header_file, "extern bool %s_%s%s;\n", g_macro_prefix, g_enumeration_prefix, iter->first);
-		iter->second->print_declaration(header_file);
+		print_interface_declaration(iter->second, header_file);
 		indent_fprintf(header_file, "#endif\n");
 	}
 
@@ -755,7 +747,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 
 	fprintf(source_file, "#include \"%s\"\n", header_name);
 
-	full_interface.print_definition(source_file);
+	print_interface_definition(&full_interface, source_file);
 
 	indent_fprintf(source_file, "\n");
 	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
@@ -821,7 +813,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	indent_fprintf(source_file, "if (req_version < %d) return false;\n", min_version);
 	indent_fprintf(source_file, "if (req_version > %d) return false;\n", max_version);
 
-	FOREACH (iter, full_interface.commands, interface::commands_type)
+	FOREACH (iter, full_interface.commands, commands_type)
 		(iter->second)->print_load(source_file, g_command_prefix);
 
 	if (is_gl_api) {
@@ -856,7 +848,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 					g_macro_prefix, g_enumeration_prefix, iter->first,
 					g_macro_prefix, g_enumeration_prefix, iter->first);
 			increase_indent();
-			iter->second->print_load_check(source_file);
+			print_interface_load_check(iter->second, source_file);
 			decrease_indent();
 			fprintf(source_file, ";\n");
 		}
@@ -864,7 +856,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 
 	indent_fprintf(source_file, "\n");
 	indent_fprintf(source_file, "return ");
-	base_interface.print_load_check(source_file);
+	print_interface_load_check(&base_interface, source_file);
 
 	FOREACH(iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first <= min_version || !iter->second->commands.size())
@@ -873,7 +865,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		indent_fprintf(source_file, " && ((req_version < %d) ||\n", iter->first);
 		increase_indent();
 		indent_fprintf(source_file, "(");
-		iter->second->print_load_check(source_file);
+		print_interface_load_check(iter->second, source_file);
 		fprintf(source_file, "))");
 		decrease_indent();
 	}
