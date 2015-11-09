@@ -36,6 +36,15 @@
 #include <sys/types.h>
 #endif
 
+enum API {
+	API_GL,
+	API_EGL,
+	API_GLX,
+	API_WGL
+};
+
+enum API g_api;
+
 using namespace tinyxml2;
 
 std::string g_indent_string;
@@ -163,7 +172,7 @@ struct interface {
 	types_type types;
 };
 
-	//Api description
+//Api description
 const char *g_api_name;
 const char *g_variant_name;
 const char *g_command_prefix;
@@ -630,7 +639,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	interface base_interface;
 	int max_version = min_version;
 
-	bool is_gl_api = !strcmp(g_api_name, "gl");
+	bool is_gl_api = g_api == API_GL;
 	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
 		if (iter->first > min_version)
 			interface_resolve_types(iter->second);
@@ -652,12 +661,15 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	fprintf(header_file, "extern \"C\" {\n");
 	fprintf(header_file, "#endif\n");
 
-	if (!strcmp(g_api_name, "glx")) {
+	switch (g_api) {
+	case API_GLX:
 		fprintf(header_file, "#include <X11/Xlib.h>\n");
 		fprintf(header_file, "#include <X11/Xutil.h>\n");
 		fprintf(header_file, "#define GLX_EXTENSION_NAME \"GLX\"\n");
-	} else if (!strcmp(g_api_name, "wgl")) {
+		break;
+	case API_WGL:
 		fprintf(header_file, "#include <windows.h>\n");
+		break;
 	}
 	fprintf(header_file, "#include <stdint.h>\n");
 	fprintf(header_file, "#include <stddef.h>\n");
@@ -880,7 +892,7 @@ static void print_help(const char *program_name)
 	printf("\n"
 	       "Options:\n"
 	       "  -a,--api <api>                     Generate bindings for API <api>. Must be one\n"
-	       "                                     of 'gl', 'wgl', or 'glx'. Default is 'gl'\n"
+	       "                                     of 'gl', 'wgl', 'egl', or 'glx'. Default is 'gl'\n"
 	       "  -n,--namespace <Namespace>         Namespace for generated bindings. This is the first\n"
 	       "                                     part of the name of every function and macro.\n"
 	       "  -s,--srcdir <dir>                  Directory to find XML sources\n"
@@ -969,18 +981,29 @@ int main(int argc, char **argv)
 
 	printf("Generating bindings for %s with namespace '%s'\n", g_api_name, g_prefix);
 
-	if (!strcmp(g_api_name,"wgl")) {
+	if (!strcmp(g_api_name, "wgl")) {
+		g_api = API_WGL;
 		g_command_prefix = "wgl";
 		g_enumeration_prefix = "WGL_";
 		g_api_print_name = "WGL";
-	} else if (!strcmp(g_api_name,"glx")) {
+	} else if (!strcmp(g_api_name, "glx")) {
+		g_api = API_GLX;
 		g_command_prefix = "glX";
 		g_enumeration_prefix = "GLX_";
 		g_api_print_name = "glX";
-	} else if (!strcmp(g_api_name,"gl")) {
+	} else if (!strcmp(g_api_name, "gl")) {
+		g_api = API_GL;
 		g_command_prefix = "gl";
 		g_enumeration_prefix = "GL_";
 		g_api_print_name = "OpenGL";
+	} else if (!strcmp(g_api_name, "egl")) {
+		g_api = API_EGL;
+		g_command_prefix = "egl";
+		g_enumeration_prefix = "EGL_";
+		g_api_print_name = "EGL";
+	} else {
+		fprintf(stderr, "Unrecognized API '%s'\n", g_api_name);
+		exit(-1);
 	}
 
 	char in_filename[200];
@@ -1039,13 +1062,16 @@ int main(int argc, char **argv)
 	fprintf(source_file, "*/\n\n");
 	fprintf(header_file, "*/\n\n");
 
-	if (!strcmp(g_api_name, "gl")) {
-		bindify(header_name, 32, header_file, source_file);
-	} else if (!strcmp(g_api_name, "glx")) {
-		bindify(header_name, 14, header_file, source_file);
-	} else if (!strcmp(g_api_name, "wgl")) {
-		bindify(header_name, 10, header_file, source_file);
+	int min_ver = 10;
+	switch (g_api) {
+	case API_GL:
+		min_ver = 32;
+		break;
+	case API_GLX:
+		min_ver = 14;
+		break;
 	}
+	bindify(header_name, min_ver, header_file, source_file);
 
 	fclose(source_file);
 	fclose(header_file);
