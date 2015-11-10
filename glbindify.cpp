@@ -168,14 +168,12 @@ struct command {
 
 typedef std::map<const char *, command *, cstring_compare> commands_type;
 typedef std::set<const char *, cstring_compare> enums_type;
-typedef std::map<const char *, std::string, cstring_compare> types_type;
 
 struct interface {
 	enums_type enums;
 	commands_type commands;
 	enums_type removed_enums;
 	commands_type removed_commands;
-	types_type types;
 };
 
 //Api description
@@ -196,10 +194,8 @@ std::vector<enumeration *> g_enumerations;
 typedef std::map<const char *, command *, cstring_compare> commands_type;
 commands_type g_commands;
 
-typedef std::map<const char *, std::string, cstring_compare> types_type;
+typedef std::vector<std::string> types_type;
 types_type g_types;
-typedef std::vector<std::string> top_types_type;
-top_types_type g_top_types;
 
 typedef std::map<int, interface *> feature_interfaces_type;
 feature_interfaces_type g_feature_interfaces;
@@ -459,13 +455,11 @@ class type_visitor :  public XMLVisitor
 	bool VisitExit(const XMLElement &elem)
 	{
 		if (m_type_name != NULL) {
-			if (tag_stack_test(elem, "type", "types", "registry")) {
+			if (tag_test(elem, "type")) {
 				if (!g_common_gl_typedefs.count(m_type_name)) {
 					g_common_gl_typedefs.insert(m_type_name);
-					g_top_types.push_back(m_type_decl);
+					g_types.push_back(m_type_decl);
 				}
-			} else if (tag_test(elem, "type")) {
-				g_types[m_type_name] = m_type_decl;
 			}
 		}
 		return true;
@@ -561,20 +555,6 @@ void print_interface_declaration(struct interface *iface, FILE *header_file)
 {
 	const char *enumeration_prefix = g_enumeration_prefix;
 
-	FOREACH(val, iface->types, types_type) {
-		char *temp = strdup(val->first);
-		char *cur;
-		for (cur = temp; *cur; cur++)
-			if (*cur == ' ')
-				*cur = '_';
-		indent_fprintf(header_file, "#ifndef %s_TYPE_%s\n", g_macro_prefix, temp);
-		indent_fprintf(header_file, "#define %s_TYPE_%s\n", g_macro_prefix, temp);
-		indent_fprintf(header_file, "%s\n", val->second.c_str());
-		indent_fprintf(header_file, "#endif\n", enumeration_prefix, val->first);
-		free(temp);
-	}
-
-	indent_fprintf(header_file, "\n");
 	FOREACH (val, iface->removed_enums, enums_type)
 		fprintf(header_file, "#undef %s%s\n", enumeration_prefix, *val);
 
@@ -591,7 +571,8 @@ void print_interface_declaration(struct interface *iface, FILE *header_file)
 		}
 	}
 
-	indent_fprintf(header_file, "\n");
+	if (iface->enums.size())
+		indent_fprintf(header_file, "\n");
 	FOREACH (iter, iface->removed_commands, commands_type) {
 		command *command = iter->second;
 		fprintf(header_file, "#undef %s%s\n",
@@ -611,22 +592,6 @@ void print_interface_definition(struct interface *iface, FILE *source_file)
 	indent_fprintf(source_file, "\n");
 	FOREACH (iter, iface->commands, commands_type)
 		iter->second->print_initialize(source_file, g_command_prefix);
-}
-
-void interface_include_type(struct interface *iface, const char *type)
-{
-	if (type != NULL && !g_common_gl_typedefs.count(type) && !iface->types.count(type))
-		iface->types[type] = g_types[type];
-}
-
-void interface_resolve_types(struct interface *iface)
-{
-	FOREACH (iter, iface->commands, commands_type) {
-		command *command = iter->second;
-		interface_include_type(iface, command->type);
-		for (std::vector<command::param>::iterator iter = command->params.begin(); iter != command->params.end(); iter++)
-			interface_include_type(iface, iter->type);
-	}
 }
 
 void interface_append(struct interface *iface, const interface &other)
@@ -667,18 +632,14 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 
 	bool is_gl_api = g_api == API_GL;
 	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
-		if (iter->first > min_version)
-			interface_resolve_types(iter->second);
-		else
+		if (iter->first <= min_version)
 			interface_append(&base_interface, *(iter->second));
 		max_version = iter->first > max_version ? iter->first : max_version;
 		interface_append(&full_interface,*(iter->second));
 	}
 	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
-		interface_resolve_types(iter->second);
 		interface_append(&full_interface, *(iter->second));
 	}
-	interface_resolve_types(&base_interface);
 
 	fprintf(header_file, "#ifndef GL_BINDIFY_%s_H\n", g_api_name);
 	fprintf(header_file, "#define GL_BINDIFY_%s_H\n", g_api_name);
@@ -731,7 +692,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		indent_fprintf(header_file, "#include <khrplatform.h>\n");
 	}
 
-	FOREACH(val, g_top_types, top_types_type)
+	FOREACH(val, g_types, types_type)
 		indent_fprintf(header_file, "%s\n", val->c_str());
 
 	print_interface_declaration(&base_interface, header_file);
@@ -744,7 +705,6 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 					g_macro_prefix,
 					g_enumeration_prefix,
 					iter->first);
-			indent_fprintf(header_file, "\n");
 			print_interface_declaration(iter->second, header_file);
 			indent_fprintf(header_file, "#endif\n");
 		}
