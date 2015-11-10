@@ -1365,10 +1365,8 @@
             <command name="wglSetLayerPaletteEntries"/>
             <command name="wglShareLists"/>
             <command name="wglSwapLayerBuffers"/>
-            <command name="wglUseFontBitmaps"/>
             <command name="wglUseFontBitmapsA"/>
             <command name="wglUseFontBitmapsW"/>
-            <command name="wglUseFontOutlines"/>
             <command name="wglUseFontOutlinesA"/>
             <command name="wglUseFontOutlinesW"/>
         </require>
