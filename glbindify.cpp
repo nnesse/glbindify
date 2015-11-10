@@ -459,8 +459,10 @@ class type_visitor :  public XMLVisitor
 	{
 		if (m_type_name != NULL) {
 			if (tag_stack_test(elem, "type", "types", "registry")) {
-				g_common_gl_typedefs.insert(m_type_name);
-				g_top_types.push_back(m_type_decl);
+				if (!g_common_gl_typedefs.count(m_type_name)) {
+					g_common_gl_typedefs.insert(m_type_name);
+					g_top_types.push_back(m_type_decl);
+				}
 			} else if (tag_test(elem, "type")) {
 				g_types[m_type_name] = m_type_decl;
 			}
