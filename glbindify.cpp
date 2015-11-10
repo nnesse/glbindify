@@ -97,6 +97,11 @@ static inline bool tag_stack_test(const XMLNode &elem, const char *value, const 
 	return tag_test(elem, value) && elem.Parent() && tag_test(*elem.Parent(), parent_value);
 }
 
+static inline bool tag_stack_test(const XMLNode &elem, const char *value, const char *parent_value, const char *grandparent_value)
+{
+	return tag_test(elem, value) && elem.Parent() && tag_stack_test(*elem.Parent(), parent_value, grandparent_value);
+}
+
 static inline bool parent_tag_stack_test(const XMLNode &elem, const char *value, const char *parent_value)
 {
 	return elem.Parent() && tag_stack_test(*elem.Parent(), value, parent_value);
@@ -181,7 +186,9 @@ const char *g_api_print_name;;
 
 //List of all enums and commands
 typedef std::map<const char *, unsigned int, cstring_compare> enum_map_type;
+typedef std::map<const char *, const char *, cstring_compare> enum_str_map_type;
 enum_map_type g_enum_map;
+enum_str_map_type g_enum_str_map;
 
 std::vector<enumeration *> g_enumerations;
 
@@ -190,6 +197,8 @@ commands_type g_commands;
 
 typedef std::map<const char *, std::string, cstring_compare> types_type;
 types_type g_types;
+typedef std::vector<std::string> top_types_type;
+top_types_type g_top_types;
 
 typedef std::map<int, interface *> feature_interfaces_type;
 feature_interfaces_type g_feature_interfaces;
@@ -209,9 +218,7 @@ bool is_command_in_namespace(const char **name)
 
 bool is_enum_in_namespace(const char **name)
 {
-	if (!strcmp(*name, "GLX_EXTENSION_NAME")) {
-		return false;
-	} else if (strstr(*name, g_enumeration_prefix) == *name) {
+	if (strstr(*name, g_enumeration_prefix) == *name) {
 		*name = *name + strlen(g_enumeration_prefix);
 		return true;
 	} else {
@@ -356,7 +363,7 @@ class enumeration_visitor : public data_builder_visitor<enumeration>
 					m_data->enum_map[enumeration_name] = val;
 					g_enum_map[enumeration_name] = val;
 				} else {
-					printf("warning: can't parse value of enum %s: \"%s\"\n", elem.Attribute("name"), elem.Attribute("value"));
+					g_enum_str_map[enumeration_name] = strdup(elem.Attribute("value"));
 				}
 			}
 		}
@@ -450,8 +457,13 @@ class type_visitor :  public XMLVisitor
 
 	bool VisitExit(const XMLElement &elem)
 	{
-		if (tag_test(elem, "type") && m_type_name != NULL) {
-			g_types[m_type_name] = m_type_decl;
+		if (m_type_name != NULL) {
+			if (tag_stack_test(elem, "type", "types", "registry")) {
+				g_common_gl_typedefs.insert(m_type_name);
+				g_top_types.push_back(m_type_decl);
+			} else if (tag_test(elem, "type")) {
+				g_types[m_type_name] = m_type_decl;
+			}
 		}
 		return true;
 	}
@@ -498,7 +510,12 @@ class khronos_registry_visitor : public XMLVisitor
 			const char *name = elem.Attribute("name") + strlen(g_api_name) + 1;
 
 			//We can't support many SGI extensions due to missing types
-			if (!strcmp(g_api_name, "glx") && (strstr(name, "SGI") == name) && !strstr(name,"swap_control")) {
+			if (g_api == API_GLX && (strstr(name, "SGI") == name) && !strstr(name,"swap_control")) {
+				return false;
+			}
+
+			//No need to support android and it breaks due to missing types
+			if (g_api == API_EGL && strstr(name, "ANDROID")) {
 				return false;
 			}
 
@@ -558,10 +575,18 @@ void print_interface_declaration(struct interface *iface, FILE *header_file)
 	FOREACH (val, iface->removed_enums, enums_type)
 		fprintf(header_file, "#undef %s%s\n", enumeration_prefix, *val);
 
-	FOREACH (val, iface->enums, enums_type)
-		fprintf(header_file, "#define %s%s 0x%x\n",
-				enumeration_prefix, *val,
-				g_enum_map[*val]);
+	FOREACH (val, iface->enums, enums_type) {
+		enum_map_type::iterator iter = g_enum_map.find(*val);
+		if (iter != g_enum_map.end()) {
+			fprintf(header_file, "#define %s%s 0x%x\n",
+					enumeration_prefix, *val,
+					iter->second);
+		} else {
+			fprintf(header_file, "#define %s%s %s\n",
+					enumeration_prefix, *val,
+					g_enum_str_map[*val]);
+		}
+	}
 
 	indent_fprintf(header_file, "\n");
 	FOREACH (iter, iface->removed_commands, commands_type) {
@@ -587,9 +612,8 @@ void print_interface_definition(struct interface *iface, FILE *source_file)
 
 void interface_include_type(struct interface *iface, const char *type)
 {
-	if (type != NULL && !g_common_gl_typedefs.count(type) && !iface->types.count(type)) {
+	if (type != NULL && !g_common_gl_typedefs.count(type) && !iface->types.count(type))
 		iface->types[type] = g_types[type];
-	}
 }
 
 void interface_resolve_types(struct interface *iface)
@@ -597,9 +621,8 @@ void interface_resolve_types(struct interface *iface)
 	FOREACH (iter, iface->commands, commands_type) {
 		command *command = iter->second;
 		interface_include_type(iface, command->type);
-		for (std::vector<command::param>::iterator iter = command->params.begin(); iter != command->params.end(); iter++) {
+		for (std::vector<command::param>::iterator iter = command->params.begin(); iter != command->params.end(); iter++)
 			interface_include_type(iface, iter->type);
-		}
 	}
 }
 
@@ -665,7 +688,6 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	case API_GLX:
 		fprintf(header_file, "#include <X11/Xlib.h>\n");
 		fprintf(header_file, "#include <X11/Xutil.h>\n");
-		fprintf(header_file, "#define GLX_EXTENSION_NAME \"GLX\"\n");
 		break;
 	case API_WGL:
 		fprintf(header_file, "#include <windows.h>\n");
@@ -695,10 +717,19 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	indent_fprintf(header_file, "typedef double GLdouble;\n");
 	indent_fprintf(header_file, "typedef ptrdiff_t GLintptr;\n");
 	indent_fprintf(header_file, "typedef ptrdiff_t GLsizeiptr;\n");
+
 	indent_fprintf(header_file, "#endif\n");
 	indent_fprintf(header_file, "#ifndef %s_%sVERSION\n", g_macro_prefix, g_enumeration_prefix);
 	indent_fprintf(header_file, "#define %s_%sVERSION %d\n", g_macro_prefix, g_enumeration_prefix, min_version);
 	indent_fprintf(header_file, "#endif\n");
+
+	if (g_api == API_EGL) {
+		indent_fprintf(header_file, "#include <eglplatform.h>\n");
+		indent_fprintf(header_file, "#include <khrplatform.h>\n");
+	}
+
+	FOREACH(val, g_top_types, top_types_type)
+		indent_fprintf(header_file, "%s\n", val->c_str());
 
 	print_interface_declaration(&base_interface, header_file);
 	FOREACH (iter, g_feature_interfaces, feature_interfaces_type) {
@@ -738,8 +769,21 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	reset_indent();
 
 	fprintf(source_file, "#ifndef _WIN32\n");
-	fprintf(source_file, "extern void (*glXGetProcAddress(const unsigned char *))(void);\n");
-	fprintf(source_file, "static inline void *LoadProcAddress(const char *name) { return glXGetProcAddress((const unsigned char *)name); }\n");
+
+	if (g_api != API_EGL && g_api != API_GLX)
+		fprintf(source_file, "#ifdef %s_USE_EGL\n", g_macro_prefix);
+	if (g_api != API_GLX) {
+		fprintf(source_file, "extern void (*eglGetProcAddress(const unsigned char *))(void);\n");
+		fprintf(source_file, "static inline void *LoadProcAddress(const char *name) { return eglGetProcAddress((const unsigned char *)name); }\n");
+	}
+	if (g_api != API_EGL && g_api != API_GLX)
+		fprintf(source_file, "#else\n");
+	if (g_api != API_EGL) {
+		fprintf(source_file, "extern void (*glXGetProcAddress(const unsigned char *))(void);\n");
+		fprintf(source_file, "static inline void *LoadProcAddress(const char *name) { return glXGetProcAddress((const unsigned char *)name); }\n");
+	}
+	if (g_api != API_EGL && g_api != API_GLX)
+		fprintf(source_file, "#endif\n");
 	fprintf(source_file, "#include <stdio.h>\n");
 	fprintf(source_file, "#else\n");
 	fprintf(source_file, "#include <windows.h>\n");
