@@ -98,11 +98,6 @@ static inline bool tag_stack_test(const XMLNode &elem, const char *value, const 
 	return tag_test(elem, value) && elem.Parent() && tag_test(*elem.Parent(), parent_value);
 }
 
-static inline bool tag_stack_test(const XMLNode &elem, const char *value, const char *parent_value, const char *grandparent_value)
-{
-	return tag_test(elem, value) && elem.Parent() && tag_stack_test(*elem.Parent(), parent_value, grandparent_value);
-}
-
 static inline bool parent_tag_stack_test(const XMLNode &elem, const char *value, const char *parent_value)
 {
 	return elem.Parent() && tag_stack_test(*elem.Parent(), value, parent_value);
