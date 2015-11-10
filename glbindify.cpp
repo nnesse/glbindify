@@ -38,6 +38,7 @@
 
 enum API {
 	API_GL,
+	API_GLES2,
 	API_EGL,
 	API_GLX,
 	API_WGL
@@ -385,9 +386,9 @@ class interface_visitor : public XMLVisitor
 		if (&elem == &m_root) {
 			return true;
 		} else if (tag_test(elem, "require") && elem.Parent() == &m_root) {
-			return !elem.Attribute("profile") || !strcmp(elem.Attribute("profile"), "core");
+			return g_api != API_GL || !elem.Attribute("profile") || !strcmp(elem.Attribute("profile"), "core");
 		} else if (tag_test(elem, "remove") && elem.Parent() == &m_root) {
-			return !elem.Attribute("profile") || !strcmp(elem.Attribute("profile"), "core");
+			return g_api != API_GL || !elem.Attribute("profile") || !strcmp(elem.Attribute("profile"), "core");
 		} else if (tag_stack_test(elem, "enum", "require")) {
 			const char *enumeration_name = elem.Attribute("name");
 			if (is_enum_in_namespace(&enumeration_name)) {
@@ -509,7 +510,7 @@ class khronos_registry_visitor : public XMLVisitor
 			const char *supported = elem.Attribute("supported");
 			char *supported_copy = strdup(supported);
 			char *token = strtok(supported_copy, "|");
-			const char *name = elem.Attribute("name") + strlen(g_api_name) + 1;
+			const char *name = elem.Attribute("name") + strlen(g_enumeration_prefix);
 
 			//We can't support many SGI extensions due to missing types
 			if (g_api == API_GLX && (strstr(name, "SGI") == name) && !strstr(name,"swap_control")) {
@@ -937,12 +938,12 @@ static void print_help(const char *program_name)
 	printf("Usage: %s [OPTION]...\n", program_name);
 	printf("\n"
 	       "Options:\n"
-	       "  -a,--api <api>                     Generate bindings for API <api>. Must be one\n"
-	       "                                     of 'gl', 'wgl', 'egl', or 'glx'. Default is 'gl'\n"
-	       "  -n,--namespace <Namespace>         Namespace for generated bindings. This is the first\n"
-	       "                                     part of the name of every function and macro.\n"
-	       "  -s,--srcdir <dir>                  Directory to find XML sources\n"
-	       "  -v,--version                       Print version information\n");
+	       "  -a,--api <api>                Generate bindings for API <api>. Must be one\n"
+	       "                                of 'gl', 'wgl', 'egl', 'gles2', or 'glx'. Default is 'gl'\n"
+	       "  -n,--namespace <Namespace>    Namespace for generated bindings. This is the first\n"
+	       "                                part of the name of every function and macro.\n"
+	       "  -s,--srcdir <dir>             Directory to find XML sources\n"
+	       "  -v,--version                  Print version information\n");
 }
 
 int main(int argc, char **argv)
@@ -974,7 +975,6 @@ int main(int argc, char **argv)
 	};
 
 	g_api_name = "gl";
-	g_variant_name = "glcore";
 	const char *srcdir = NULL;
 
 	const char *prefix = "glb";
@@ -998,11 +998,6 @@ int main(int argc, char **argv)
 			break;
 		case 'a':
 			g_api_name = optarg;
-			if (!strcmp(g_api_name, "gl")) {
-				g_variant_name = "glcore";
-			} else {
-				g_variant_name = g_api_name;
-			}
 			break;
 		case 's':
 			srcdir = optarg;
@@ -1027,28 +1022,46 @@ int main(int argc, char **argv)
 
 	printf("Generating bindings for %s with namespace '%s'\n", g_api_name, g_prefix);
 
+	const char *xml_name = NULL;
+
 	if (!strcmp(g_api_name, "wgl")) {
 		g_api = API_WGL;
 		g_command_prefix = "wgl";
 		g_enumeration_prefix = "WGL_";
 		g_api_print_name = "WGL";
+		g_variant_name = g_api_name;
+		xml_name = "wgl.xml";
 	} else if (!strcmp(g_api_name, "glx")) {
 		g_api = API_GLX;
 		g_command_prefix = "glX";
 		g_enumeration_prefix = "GLX_";
+		g_variant_name = g_api_name;
+		xml_name = "glx.xml";
 		g_api_print_name = "glX";
 	} else if (!strcmp(g_api_name, "gl")) {
 		g_api = API_GL;
 		g_command_prefix = "gl";
 		g_enumeration_prefix = "GL_";
 		g_api_print_name = "OpenGL";
+		g_variant_name = "glcore";
+		xml_name = "gl.xml";
 	} else if (!strcmp(g_api_name, "egl")) {
 		g_api = API_EGL;
 		g_command_prefix = "egl";
 		g_enumeration_prefix = "EGL_";
 		g_api_print_name = "EGL";
+		g_variant_name = g_api_name;
+		xml_name = "egl.xml";
+	} else if (!strcmp(g_api_name, "gles2")) {
+		g_api = API_GLES2;
+		g_command_prefix = "gl";
+		g_enumeration_prefix = "GL_";
+		g_api_print_name = "GLES2";
+		g_variant_name = g_api_name;
+		xml_name = "gl.xml";
 	} else {
 		fprintf(stderr, "Unrecognized API '%s'\n", g_api_name);
+		print_help(argv[0]);
 		exit(-1);
 	}
 
@@ -1057,12 +1070,12 @@ int main(int argc, char **argv)
 	if (!srcdir) {
 		srcdir = PKGDATADIR;
 	}
-	snprintf(in_filename, sizeof(in_filename), "%s/%s.xml", srcdir, g_api_name);
+	snprintf(in_filename, sizeof(in_filename), "%s/%s", srcdir, xml_name);
 #else
 	if (!srcdir) {
 		srcdir = ".";
 	}
-	snprintf(in_filename, sizeof(in_filename), "%s/%s.xml", srcdir, g_api_name);
+	snprintf(in_filename, sizeof(in_filename), "%s/%s", srcdir, xml_name);
 #endif
 	err = doc.LoadFile(in_filename);
 	if (err != XML_NO_ERROR) {
@@ -1117,6 +1130,9 @@ int main(int argc, char **argv)
 		break;
 	case API_GLX:
 		min_ver = 14;
+		break;
+	case API_GLES2:
+		min_ver = 20;
 		break;
 	}
 	bindify(header_name, min_ver, header_file, source_file);

@@ -1,14 +1,14 @@
 glbindify
 =========
 
-glbindify is a command line tool that generates C bindings for OpenGL, WGL, EGL, and GLX.  The generated bindings can then be included in your projects, eliminating the need to link to a seperate loader library. The bindings are generated using XML API specifications mainained by khronos so only these XML files need to be updated to support new GL versions or extensions.
+glbindify is a command line tool that generates C bindings for OpenGL, GLES2 (and higher), WGL, EGL, and GLX.  The generated bindings can then be included in your projects, eliminating the need to link to a seperate loader library. The bindings are generated using XML API specifications mainained by khronos so only these XML files need to be updated to support new GL versions or extensions.
 
 It supports generating bindings for core profile contexts only which substantially reduces the size of the bindings. The generated header file only exposes functions and enums for API versions and extensions you select at compile time, ensuring that your application does not accidentally aquire unwanted dependencies.
 
 Command line usage
 ------------------
 
-To generate bindings just specify the API name to `glbindify` where the API name is one of `gl`, `wgl`, 'egl', or `glx`. The tool will generate a source file and header file for the API in the current directory with the names `glb-<api>.c` and `glb-<api>.h`.
+To generate bindings just specify the API name to `glbindify` where the API name is one of `gl`, `gles2`, `wgl`, 'egl', or `glx`. The tool will generate a source file and header file for the API in the current directory with the names `glb-<api>.c` and `glb-<api>.h`.
 
 Example: Generate C bindings for OpenGL core profile contexts
 
@@ -55,6 +55,16 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 		...
 	}
 
+Using with EGL
+--------------
+
+By default OpenGL bindings will try to locate GL functions using `glXGetProcAddress()`. If you want to use EGL you should define `GLB_USE_EGL` when you compile your GL bindings. This will cause `eglGetProcAddress()` to be called. The EGL API itself will use `eglGetProcAddress()` without this definition.
+
+GLES
+----
+
+Only GLES 2.0 and higher is supported. GLES3 is not a considered separate API and is supported when `gles2` is specified as the API.
+
 Binding namespace
 -----------------
 
@@ -73,11 +83,6 @@ Example: Using bindings with a `myapp` namespace
 		exit(-1);
 	...
 	glDrawArrays(...);
-
-Using with EGL
---------------
-
-By default OpenGL bindings will try to locate GL functions using `glXGetProcAddress()`. If you want to use EGL you should define GLB_USE_EGL when you compile your GL bindings. This will cause `eglGetProcAddress()` to be called. The EGL API itself will use `eglGetProcAddress()` without this definition.
 
 Building
 --------
