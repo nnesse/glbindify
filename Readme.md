@@ -8,7 +8,7 @@ It supports generating bindings for core profile contexts only which substantial
 Command line usage
 ------------------
 
-To generate bindings just specify the API name to `glbindify` where the API name is one of `gl`, `gles2`, `wgl`, 'egl', or `glx`. The tool will generate a source file and header file for the API in the current directory with the names `glb-<api>.c` and `glb-<api>.h`.
+To generate bindings just specify the API name to `glbindify` where the API name is one of `gl`, `gles2`, `wgl`, `egl`, or `glx`. The tool will generate a source file and header file for the API in the current directory with the names `glb-<api>.c` and `glb-<api>.h`.
 
 Example: Generate C bindings for OpenGL core profile contexts
 
@@ -22,7 +22,7 @@ After you have created your OpenGL context and made it current you must call
 `bool glb_<api>_init(int major_version, int minor_version)`
 
 
-where `<api>` is one of `glcore`, `wgl`, or `glx`. If all functions for the requested version, excluding extensions, were found `glb_<api>_init()` will return `true`. Since glbindify mangles the GL function names with macros you must avoid including system OpenGL headers in files that also include the bindings.
+If all functions for the requested version, excluding extensions, were found `glb_<api>_init()` will return `true`. Since glbindify mangles the GL function names with macros you must avoid including system OpenGL headers in files that also include the bindings.
 
 Example:
 
@@ -36,7 +36,7 @@ Example:
 Targeting specific versions
 ---------------------------
 
-By default the generated header file will only expose functions and enums for the minimum version supported by `glbindify`. For OpenGL the minimum version is 3.2 core profile, for GLX it is 1.4, and for WGL it is 1.0. To access functionality for later versions you must define a macro `GLB_<API>_VERSION` as an integer `(major_version * 10) + minor_version` where `<API>` is the name of the API in all caps.
+By default the generated header file will only expose functions and enums for the minimum version supported by `glbindify`. For OpenGL the minimum version is 3.2 core profile, for GLX it is 1.4, for GLES2 it is 2.0, and for WGL and EGL it is 1.0. To access functionality for later versions you must define a macro `GLB_<API>_VERSION` as an integer `(major_version * 10) + minor_version` where `<API>` is the name of the API in all caps.
 
 Extensions
 ----------
@@ -55,15 +55,15 @@ Example: Checking for the `GL_ARB_texture_storage` extension
 		...
 	}
 
-Using with EGL
---------------
+Using EGL
+---------
 
-By default OpenGL bindings will try to locate GL functions using `glXGetProcAddress()`. If you want to use EGL you should define `GLB_USE_EGL` when you compile your GL bindings. This will cause `eglGetProcAddress()` to be called. The EGL API itself will use `eglGetProcAddress()` without this definition.
+By default on GNU/Linux systems OpenGL bindings will be fetched with `glXGetProcAddress()`. If you want to use EGL you should define `GLB_USE_EGL` when you compile your GL bindings. This will cause `eglGetProcAddress()` to be called. The EGL API bindings will always be fetched via `eglGetProcAddress()`.
 
 GLES
 ----
 
-Only GLES 2.0 and higher is supported. GLES3 is not a considered separate API and is supported when `gles2` is specified as the API.
+GLES 2.0 and higher is supported by specifying `gles2` as the API. GLES 3.0 and higher are supported through the GLES2 bindings by specifying a version number 3.0 or higher to `glb_gles2_init()`.
 
 Binding namespace
 -----------------
