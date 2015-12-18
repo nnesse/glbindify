@@ -903,7 +903,8 @@ static void print_help(const char *program_name)
 	       "  -n,--namespace <Namespace>    Namespace for generated bindings. This is the first\n"
 	       "                                part of the name of every function and macro.\n"
 	       "  -s,--srcdir <dir>             Directory to find XML sources\n"
-	       "  -v,--version                  Print version information\n");
+	       "  -v,--version                  Print version information\n"
+	       "  -h,--help                     Display this page\n");
 }
 
 int main(int argc, char **argv)
@@ -929,8 +930,8 @@ int main(int argc, char **argv)
 	static struct option options [] = {
 		{"api"       , 1, 0, 'a' },
 		{"srcdir"    , 1, 0, 's' },
-		{"version"    , 1, 0, 'v' },
-		{"namespace" , 1, 0, 'n' },
+		{"version"   , 1, 0, 'v' },
+		{"namespace" , 0, 0, 'n' },
 		{"help"      , 0, 0, 'h' }
 	};
 
