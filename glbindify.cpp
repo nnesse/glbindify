@@ -30,7 +30,9 @@
 #define PACKAGE_STRING "<unknown>"
 #endif
 
-#if HAVE_GPERF
+#define USE_GPERF HAVE_GPERF && !defined(_WIN32)
+
+#if USE_GPERF
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/types.h>
@@ -772,7 +774,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 				is_gl_api ? "false" : "true");
 	}
 
-#if HAVE_GPERF
+#if USE_GPERF
 	if (is_gl_api) {
 		//
 		// Have gperf make a hash table for extension names. We can write the output
@@ -840,7 +842,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 		indent_fprintf(source_file, "if (actual_version < req_version) return false;\n");
 		indent_fprintf(source_file, "for (i = 0; i < num_extensions; i++) {\n");
 		indent_fprintf(source_file, "\tconst char *extname = (const char *)glGetStringi(GL_EXTENSIONS, i);\n");
-#if HAVE_GPERF
+#if USE_GPERF
 		indent_fprintf(source_file, "\tstruct extension_match *match = %s_find_extension(extname, strlen(extname));\n", g_prefix);
 		indent_fprintf(source_file, "\tif (match)\n");
 		indent_fprintf(source_file, "\t\t*match->support_flag = true;\n");
