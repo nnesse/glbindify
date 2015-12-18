@@ -557,6 +557,7 @@ void print_interface_declaration(struct interface *iface, FILE *header_file)
 
 	FOREACH (val, iface->enums, enums_type) {
 		enum_map_type::iterator iter = g_enum_map.find(*val);
+		fprintf(header_file, "#undef %s%s\n", enumeration_prefix, *val);
 		if (iter != g_enum_map.end()) {
 			fprintf(header_file, "#define %s%s 0x%x\n",
 					enumeration_prefix, *val,
@@ -577,6 +578,7 @@ void print_interface_declaration(struct interface *iface, FILE *header_file)
 	}
 	FOREACH (iter, iface->commands, commands_type) {
 		command *command = iter->second;
+		fprintf(header_file, "#undef %s%s\n", g_command_prefix, command->name);
 		fprintf(header_file, "#define %s%s _%s_%s%s\n",
 				g_command_prefix, command->name,
 				g_prefix, g_command_prefix, command->name);
@@ -758,6 +760,7 @@ void bindify(const char *header_name, int min_version, FILE *header_file , FILE 
 	fprintf(source_file, "#define %s_%sVERSION %d\n", g_macro_prefix, g_enumeration_prefix, max_version);
 
 	FOREACH (iter, g_extension_interfaces, extension_interfaces_type) {
+		indent_fprintf(source_file, "#undef %s_ENABLE_%s%s\n", g_macro_prefix, g_enumeration_prefix, iter->first);
 		indent_fprintf(source_file, "#define %s_ENABLE_%s%s\n", g_macro_prefix, g_enumeration_prefix, iter->first);
 	}
 
