@@ -1046,14 +1046,8 @@ int main(int argc, char **argv)
 
 	char header_name[100];
 	char c_name[100];
-	snprintf(header_name, sizeof(header_name), "%s-%s%s",
-		g_prefix,
-		g_variant_name,
-		".h");
-	snprintf(c_name, sizeof(c_name), "%s-%s%s",
-		g_prefix,
-		g_variant_name,
-		".c");
+	snprintf(header_name, sizeof(header_name), "%s.h", g_variant_name);
+	snprintf(c_name, sizeof(c_name), "%s.c", g_variant_name);
 
 	FILE *header_file = fopen(header_name, "w+");
 	if (!header_file) {
